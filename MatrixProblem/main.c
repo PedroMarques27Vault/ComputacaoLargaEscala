@@ -212,16 +212,17 @@ static void *worker(void *wid)
 
   while(true){
     
-      struct matrixData  curMatrix;
-      curMatrix = getSingleMatrixData(id);
+      struct matrixData  *curMatrix = (struct matrixData *)malloc(sizeof(struct matrixData));
+      int contin = getSingleMatrixData(id, curMatrix);
+      if (contin == -1) {
+        signalWaitingConsumers(id);
+        break;
+      }
+      double det = getDeterminant(curMatrix->order,curMatrix->matrix);
+
+      putResults(id,det, curMatrix->fileIndex, curMatrix->matrixNumber);
+      curMatrix->processed =1;
       
-      double det = getDeterminant(curMatrix.order,curMatrix.matrix);
-
-      putResults(id,det, curMatrix.fileIndex, curMatrix.matrixNumber);
-      curMatrix.processed =1;
-
-
-      if (!areFilesAvailable(id)) break;
   }
  
 

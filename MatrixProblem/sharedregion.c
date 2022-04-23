@@ -155,7 +155,7 @@ void putMatrixInFifo (struct matrixData matrix)
 }
 
 
-int areFilesAvailable(unsigned int consId)
+int signalWaitingConsumers(unsigned int consId)
 {                                                                        /* retrieved value */
   int val = 1;
   if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)     {                              /* enter monitor */
@@ -181,10 +181,10 @@ int areFilesAvailable(unsigned int consId)
   return val;
 }
 
-struct matrixData getSingleMatrixData(unsigned int consId)
+int getSingleMatrixData(unsigned int consId, struct matrixData *val)
 {
-  struct matrixData val;                                                                           /* retrieved value */
-
+                                                                        /* retrieved value */
+  int toReturn = -1;
   if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
      { errno = statusWorker[consId];                                                            /* save error in errno */
        perror ("error on entering monitor(CF)");
@@ -201,24 +201,33 @@ struct matrixData getSingleMatrixData(unsigned int consId)
           pthread_exit (&statusWorker[consId]);
         }
     }
+    if (fCounter != totalFileCount){
+        val->fileIndex = matrices[ri].fileIndex;
+        val->matrixNumber = matrices[ri].matrixNumber;
+        val->order = matrices[ri].order;
+        val->determinant = matrices[ri].determinant;
+        val->matrix = matrices[ri].matrix;
+        val->processed = matrices[ri].processed;
+        
+     
+        ri = (ri + 1) % K;
 
-    val = matrices[ri];          
-    ri = (ri + 1) % K;
+        if (((struct matrixFile *)(files+val->fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+val->fileIndex))->nMatrix-1){
+          fCounter++;
+        }
 
-    if (((struct matrixFile *)(files+val.fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+val.fileIndex))->nMatrix-1){
-      fCounter++;
+        ((struct matrixFile *)(files+val->fileIndex))->processedMatrixCounter++;
+        full = false;
+        if ((statusWorker[consId] = pthread_cond_signal (&fifoFull)) != 0)       /* let a producer know that a value has been
+                                                                                                                  retrieved */
+          { errno = statusWorker[consId];                                                             /* save error in errno */
+            perror ("error on signaling in fifoFull");
+            statusWorker[consId] = EXIT_FAILURE;
+            pthread_exit (&statusWorker[consId]);
+          }
+        toReturn = 0;
     }
-
-    ((struct matrixFile *)(files+val.fileIndex))->processedMatrixCounter++;
-    full = false;
-    if ((statusWorker[consId] = pthread_cond_signal (&fifoFull)) != 0)       /* let a producer know that a value has been
-                                                                                                              retrieved */
-      { errno = statusWorker[consId];                                                             /* save error in errno */
-        perror ("error on signaling in fifoFull");
-        statusWorker[consId] = EXIT_FAILURE;
-        pthread_exit (&statusWorker[consId]);
-      }
-  
+    
   
   
     
@@ -230,7 +239,7 @@ struct matrixData getSingleMatrixData(unsigned int consId)
        pthread_exit (&statusWorker[consId]);
      }
 
-  return val;
+  return toReturn;
 }
 
 

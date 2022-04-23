@@ -20,12 +20,13 @@ struct matrixFile
   unsigned int order;
   unsigned int nMatrix;
 };
-extern struct matrixData getSingleMatrixData(unsigned int workerId);
+
+extern int getSingleMatrixData(unsigned int consId, struct matrixData *val);
 
 extern void putFileData (struct matrixFile matrix);
 extern struct matrixFile * getFileData ();
 extern void putMatrixInFifo (struct matrixData matrix);
-extern int areFilesAvailable(unsigned int consId);
+extern int signalWaitingConsumers(unsigned int consId);
 extern void putResults(unsigned int consId,double determinant,int fileIndex,int matrixNumber);
 
 #endif
