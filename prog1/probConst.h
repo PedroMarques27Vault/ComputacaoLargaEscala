@@ -20,7 +20,7 @@
 #define  MIN           11
 
 /** \brief default maximum number of bytes each chunk has */
-#define  DB           250
+#define  DB           2500
 
 /** \brief default number of worker threads */
 #define  DN           2
