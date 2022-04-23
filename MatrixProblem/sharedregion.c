@@ -106,24 +106,13 @@ void putFileData (struct matrixFile matrix)
 struct matrixFile * getFileData ()
 {
   struct matrixFile * toRetrieve;
-  if ((statusProd = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
-     { errno = statusProd;                                                            /* save error in errno */
-       perror ("error on entering monitor(CF)");
-       statusProd = EXIT_FAILURE;
-       pthread_exit (&statusProd);
-     }
-     /* internal data initialization */
+
     toRetrieve = (files+frp);
 
     frp = (frp + 1) % totalFileCount;
     
   
-  if ((statusProd = pthread_mutex_unlock (&accessCR)) != 0)                                  /* exit monitor */
-     { errno = statusProd;                                                            /* save error in errno */
-       perror ("error on exiting monitor(CF)");
-       statusProd = EXIT_FAILURE;
-       pthread_exit (&statusProd);
-     }
+ 
   return toRetrieve;
 }
 
@@ -213,7 +202,6 @@ struct matrixData getSingleMatrixData(unsigned int consId)
         }
     }
 
-    printf("Worker Awaken %d\n ",consId);
     val = matrices[ri];          
     ri = (ri + 1) % K;
 
@@ -248,13 +236,6 @@ struct matrixData getSingleMatrixData(unsigned int consId)
 
 void putResults(unsigned int consId,double determinant,int fileIndex,int matrixNumber)
 {
-
- 
-    (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant;
-
-    if (((struct matrixFile *)(files+fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+fileIndex))->nMatrix-1){
-
-    }
-      
+    (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant; 
 }
 
