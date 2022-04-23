@@ -9,7 +9,7 @@
  *
  *  Shared region implemented as a monitor.
  *
- *  It keeps two list of file structures:
+ *  It keeps one array of fileData structures:
  *      file: char[] fileName, FILE fp, int bytesRead, double totalBytes, bool processed, int nWords (etc);
  *  One for storing data associated to reading the file, and the other for storing the results.
  *
@@ -22,7 +22,7 @@
  *
  *      Return to the worker the fileName, the initial byte to start processing and the size to read.
  *
- *    A worker also publishes results with the function putData:
+ *    A worker also publishes results with the function savePartialResults:
  *      Stores results associated to a File.
  *
  *  There is another function, getResults, which will return the results of each file.
@@ -39,7 +39,7 @@
 #include "sharedRegion.h"
 #include "textProcFunctions.h"
 
-/** \brief producer threads return status array */
+/** \brief worker threads return status array */
 extern int *statusWorker;
 
 /** \brief number of files to process */
@@ -52,7 +52,7 @@ extern int maxBytesPerChunk;
 static pthread_mutex_t accessCR = PTHREAD_MUTEX_INITIALIZER;
 
 /** \brief storage region */
-struct fileData * filesData;
+struct fileData *filesData;
 
 /** \brief current file index being processed */
 static int currFileIndex = 0;
@@ -60,13 +60,16 @@ static int currFileIndex = 0;
 /**
  *  \brief Initialization of the data transfer region.
  *
- *  Internal monitor operation.
+ *  Allocates the memory for an array of structures with the files passed
+ *  as argument and initializes it with their names.
+ *
+ *  \param fileNames contains the names of the files to be stored
  */
-void initialData (char *fileNames[])
+void initialData(char *fileNames[])
 {
   // allocating memory for numFiles of file structs
   filesData = (struct fileData *)malloc(numFiles * sizeof(struct fileData));
-  
+
   for (int i = 0; i < numFiles; i++)
   {
     (filesData + i)->fileName = fileNames[i];
@@ -74,9 +77,16 @@ void initialData (char *fileNames[])
   }
 }
 
-
+/**
+ *  \brief Get data to process from the data transfer region.
+ *
+ *  Operation carried out by the workers.
+ *
+ *  \param workerId worker identification
+ *  \param partialData structure that will store the chunk of chars to process
+ */
 void getData(unsigned int workerId, struct filePartialData *partialData)
-{  
+{
   if ((statusWorker[workerId] = pthread_mutex_lock(&accessCR)) != 0) /* enter monitor */
   {
     errno = statusWorker[workerId]; /* save error in errno */
@@ -85,37 +95,63 @@ void getData(unsigned int workerId, struct filePartialData *partialData)
     pthread_exit(&statusWorker[workerId]);
   }
 
-
   if (numFiles != currFileIndex) /* if files have not all been processed yet */
   {
+
+    /* obtain the current file to process */
+
     struct fileData *fileToProcess = (filesData + currFileIndex);
 
-    if (fileToProcess->fp == NULL)
+    if (fileToProcess->fp == NULL) /* check if the file pointer has been initialized */
     {
-      fileToProcess->fp = fopen( fileToProcess->fileName, "rb");
-      if (fileToProcess->fp == NULL) {
+      fileToProcess->fp = fopen(fileToProcess->fileName, "rb"); /* store the file pointer */
+      if (fileToProcess->fp == NULL)
+      {
         printf("Error: could not open file %s\n", fileToProcess->fileName);
         exit(EXIT_FAILURE);
       }
     }
 
-    partialData->fileName = fileToProcess->fileName;
-    partialData->previousCh = fileToProcess->previousCh;
-    partialData->nWords = 0;
-    partialData->nWordsBV = 0;
-    partialData->nWordsEC = 0;
-    partialData->fileIndex = currFileIndex;
+    /* obtain partial data to be sent to the worker */
 
+    partialData->finished = false;                       /* data is available to process */
+    partialData->fileIndex = currFileIndex;              /* file index on the shared region array structure */
+    partialData->previousCh = fileToProcess->previousCh; /* last character of the previous chunk */
+
+    /*
+      stores in a buffer the a chunk with {maxBytesPerChunk-7} bytes
+      also obtains the size of the chunk that was read from the file
+    */
     partialData->chunkSize = fread(partialData->chunk, 1, maxBytesPerChunk - 7, fileToProcess->fp);
 
-    getChunkSizeAndLastChar(fileToProcess, partialData);
+    /*
+      if the chunk read is smaller than the value expected
+      it means the current file has reached the end
+    */
+    if (partialData->chunkSize < maxBytesPerChunk - 7)
+    {
+      currFileIndex++;           /* update the current file being processed index */
+      fclose(fileToProcess->fp); /* close the file pointer */
+    }
+    else
+    {
 
-    if (partialData->chunkSize < maxBytesPerChunk-7 || partialData->previousCh == EOF) {
-      currFileIndex++;
-      fclose(fileToProcess->fp);
+      /*
+        - reads bytes from the file until it reads a full UTF8 encoded character
+        - adds the bytes read to the chunk of partialData
+        - updates the chunk size
+        - stores the last character of this chunk as the previous character
+        of the file to process
+      */
+      getChunkSizeAndLastChar(fileToProcess, partialData);
+
+      if (partialData->previousCh == EOF) /* checks the last character was the EOF */
+      {
+        currFileIndex++;           /* update the current file being processed index */
+        fclose(fileToProcess->fp); /* close the file pointer */
+      }
     }
   }
-
 
   if ((statusWorker[workerId] = pthread_mutex_unlock(&accessCR)) != 0) /* exit monitor */
   {
