@@ -7,7 +7,7 @@
 #include <math.h>
 #include "matrixutils.h"
 #include <stdbool.h>
-
+ #include  <time.h>
 
 
 int statusProd;
@@ -177,9 +177,10 @@ int areFilesAvailable(unsigned int consId)
      }                                          /* internal data initialization */}
 
 
-  if (fCounter == totalFileCount) {val = 0;
-  pthread_cond_signal (&fifoEmpty);}
-
+  if (fCounter == totalFileCount){ 
+    val = 0;
+    pthread_cond_broadcast(&fifoEmpty);
+  }
 
   if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
      { errno = statusWorker[consId];                                                             /* save error in errno */
@@ -211,6 +212,8 @@ struct matrixData getSingleMatrixData(unsigned int consId)
           pthread_exit (&statusWorker[consId]);
         }
     }
+
+    printf("Worker Awaken %d\n ",consId);
     val = matrices[ri];          
     ri = (ri + 1) % K;
 
@@ -229,6 +232,8 @@ struct matrixData getSingleMatrixData(unsigned int consId)
       }
   
   
+  
+    
 
   if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
      { errno = statusWorker[consId];                                                             /* save error in errno */
@@ -244,31 +249,12 @@ struct matrixData getSingleMatrixData(unsigned int consId)
 void putResults(unsigned int consId,double determinant,int fileIndex,int matrixNumber)
 {
 
-  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
-     { errno = statusWorker[consId];                                                            /* save error in errno */
-       perror ("error on entering monitor(CF)");
-       statusWorker[consId] = EXIT_FAILURE;
-       pthread_exit (&statusWorker[consId]);
-     }                                          /* internal data initialization */
-
-  
-
-   
+ 
     (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant;
-    /*
+
     if (((struct matrixFile *)(files+fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+fileIndex))->nMatrix-1){
 
     }
-    */
       
-
-
-  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
-     { errno = statusWorker[consId];                                                             /* save error in errno */
-       perror ("error on exiting monitor(CF)");
-       statusWorker[consId] = EXIT_FAILURE;
-       pthread_exit (&statusWorker[consId]);
-     }
-
 }
 

@@ -105,11 +105,11 @@ int main(int argc, char *argv[])
   pthread_t tIdCons[N];                                                        /* consumers internal thread id array */
   unsigned int cons[N];                                             /* consumers application defined thread id array */
 
+  struct timespec start, finish;                                                                      /* time limits */
 
-
-
+  clock_gettime (CLOCK_MONOTONIC_RAW, &start);                              /* begin of measurement */
   statusWorker = malloc(sizeof(int) * N);
-  double t0;
+
 
   for (int i = 0; i < N; i++)
     cons[i] = i;
@@ -154,9 +154,7 @@ int main(int argc, char *argv[])
     // iterate over each matrix
     int incMCount = 0;
     while(incMCount!=numMatrix){
-      double ch;
-      int row;
-      int col;
+   
 
 
       struct matrixData  curMatrix;
@@ -167,17 +165,9 @@ int main(int argc, char *argv[])
       curMatrix.processed = 0;
 
       curMatrix.matrix = (double *)malloc(order * order * sizeof(double));
-    
-
-      for (row=0; row<order; row++) {
-        for(col = 0; col<order;col++){
-          fread(&ch, 8, 1, fp);
-          *((curMatrix.matrix+row*order) + col) = ch;
-        }
-        
-        
-      }
-      
+  
+      fread(curMatrix.matrix, 8, order*order, fp);
+     
 
       putMatrixInFifo (curMatrix);
 
@@ -204,10 +194,14 @@ int main(int argc, char *argv[])
     printf("Order of the matrices  %d\n", file->order);
 
     for (int o =0;o<file->nMatrix; o++){
-      printf("\tMatrix %d Result: Determinant = %f \n", o+1,file->matrixDeterminants[o]);
+      printf("\tMatrix %d Result: Determinant = %.3f \n", o+1,file->matrixDeterminants[o]);
     }
         
   }
+
+  clock_gettime (CLOCK_MONOTONIC_RAW, &finish);                                /* end of measurement */
+  printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
+
   exit (EXIT_SUCCESS);
 
 }
@@ -216,7 +210,7 @@ static void *worker(void *wid)
 {
   unsigned int id = *((unsigned int *)wid); /* worker id */
 
-  while(areFilesAvailable(id)){
+  while(true){
     
       struct matrixData  curMatrix;
       curMatrix = getSingleMatrixData(id);
@@ -225,6 +219,9 @@ static void *worker(void *wid)
 
       putResults(id,det, curMatrix.fileIndex, curMatrix.matrixNumber);
       curMatrix.processed =1;
+
+
+      if (!areFilesAvailable(id)) break;
   }
  
 
