@@ -255,10 +255,11 @@ void putResults(unsigned int consId,double determinant,int fileIndex,int matrixN
 
    
     (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant;
-
+    /*
     if (((struct matrixFile *)(files+fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+fileIndex))->nMatrix-1){
 
     }
+    */
       
 
 
