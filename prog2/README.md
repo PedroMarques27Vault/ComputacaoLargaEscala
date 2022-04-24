@@ -15,4 +15,4 @@ Arguments:
 
 Example:
 
-	./prog2 -f mat128_64.bin -f mat128_32.bin -k 8 -n 4
+	./prog2 -f shortMatrix/mat128_64.bin -f shortMatrix/mat128_32.bin -k 8 -n 4
