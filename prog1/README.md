@@ -1,5 +1,19 @@
 ## Text Processing with Multithreading
 
+### Main Objective:
+
+Process file texts efficiently by splitting processing load for worker threads.
+
+### Multithreaded Implementation:
+
+- Main thread processes the command line arguments.
+- Main thread initializes the shared region array of structures with the given file names.
+- Main thread creates the worker threads.
+- Workers fetch one chunk at a time from a file to process in the shared region.
+- Workers then save the results of the processing of the chunk.
+- Finally, the main thread prints the final results.
+
+
 ### How to compile:
 
 	gcc -Wall -g -O3 -o prog1 main.c sharedRegion.c textProcUtils.c
