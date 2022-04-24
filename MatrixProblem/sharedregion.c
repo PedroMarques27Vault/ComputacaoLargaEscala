@@ -10,20 +10,24 @@
  #include  <time.h>
 
 
+/** \brief main thread's return status */
 int statusProd;
 
-/** \brief consumer threads return status array */
+/** \brief worker threads return status array */
 extern int *statusWorker;
 
-/** \brief storage region */
+/** \brief matrix to process storage region - FIFO Queue */
 static struct matrixData *matrices;
 
 
+/** \brief storage region of all files */
 static struct matrixFile * files;
 
-/** \brief insertion pointer */
+/** \brief insertion pointer in FIFO Queue*/
 static unsigned int ii;
 
+/** \brief retrieval pointer */
+static unsigned int ri;
 
 /** \brief file insertion pointer */
 static unsigned int fip;
@@ -31,15 +35,16 @@ static unsigned int fip;
 /** \brief file retrieval pointer */
 static unsigned int frp;
 
-/** \brief total number of files */
+/** \brief counter of processed files */
 static unsigned int fCounter;
 
+/** \brief total number of files */
 static unsigned int totalFileCount;
 
+
+/** \brief dimension of matrices array */
 static unsigned int K;
 
-/** \brief retrieval pointer */
-static unsigned int ri;
 
 /** \brief flag signaling the data transfer region is full */
 static bool full;
@@ -47,26 +52,37 @@ static bool full;
 /** \brief locking flag which warrants mutual exclusion inside the monitor */
 static pthread_mutex_t accessCR = PTHREAD_MUTEX_INITIALIZER;
 
-
-/** \brief producers synchronization point when the data transfer region is full */
+/** \brief main process file insertion producers synchronization point when the data transfer region is full */
 static pthread_cond_t fifoFull;
 
-/** \brief consumers synchronization point when the data transfer region is empty */
+/** \brief workers synchronization point when the data transfer region is empty */
 static pthread_cond_t fifoEmpty;
 
 
+/**
+ *  \brief 
+ *
+ *  Initialization of the shared region variables
+ *  Memory allocation for the FIFO Queue and files array
+ *  
+ *  \param _totalFileCount total number of files to be processed
+ *  \param _K size of the FIFO Queue
+ *
+ */
 void initialization(int _totalFileCount, int _K)
 {
   K = _K;
-  totalFileCount = _totalFileCount;
-  matrices = malloc(sizeof(struct matrixData) * _K);
-  files = (struct matrixFile *)malloc(_totalFileCount * sizeof(struct matrixFile));
+  totalFileCount = _totalFileCount;                                               
+
+  matrices = malloc(sizeof(struct matrixData) * _K);                              /* initialize FIFO/matrices Queue  */
+  files = (struct matrixFile *)malloc(_totalFileCount * sizeof(struct matrixFile));       /* initialize files array  */
 
   
 
-                                                                                   /* initialize FIFO in empty state */
-  ii = ri = fip = 0;                                        /* FIFO insertion and retrieval pointers set to the same value */
-  fCounter = 0;
+                                                                                 
+  ii = ri = 0;                                       /* FIFO insertion and retrieval pointers  set to the same value */
+  fip = 0;                                                                     /* File insertion pointer initialized */
+  fCounter = 0;                                                             /* initialize number of processed files  */
 
   full = false;                                                                                  /* FIFO is not full */
 
@@ -75,79 +91,101 @@ void initialization(int _totalFileCount, int _K)
 }
 
 
-void putFileData (struct matrixFile matrix)
+/**
+ *  \brief 
+ *
+ *  Insert a file's data info in the files array
+ *  Executed by the main thread
+ *  \param file file's data matrixFile structure
+ *
+ */
+void putFileData (struct matrixFile file)
 {
 
-  if ((statusProd = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
-     { errno = statusProd;                                                            /* save error in errno */
+  if ((statusProd = pthread_mutex_lock (&accessCR)) != 0)                                           /* enter monitor */
+     { errno = statusProd;                                                                    /* save error in errno */
        perror ("error on entering monitor(CF)");
        statusProd = EXIT_FAILURE;
        pthread_exit (&statusProd);
      }
-     /* internal data initialization */
-    (files+fip)->filename = matrix.filename;
-    (files+fip)->processedMatrixCounter = matrix.processedMatrixCounter;
-    (files+fip)->order = matrix.order;
-    (files+fip)->nMatrix = matrix.nMatrix;
-    (files+fip)->matrixDeterminants = (double *)malloc(matrix.nMatrix * sizeof(double));
-
-
-  fip++;
-
   
-  if ((statusProd = pthread_mutex_unlock (&accessCR)) != 0)                                  /* exit monitor */
-     { errno = statusProd;                                                            /* save error in errno */
+  /* saving the file's data into the files array */
+  (files+fip)->filename = file.filename;
+  (files+fip)->processedMatrixCounter = file.processedMatrixCounter;
+  (files+fip)->order = file.order;
+  (files+fip)->nMatrix = file.nMatrix;
+  (files+fip)->matrixDeterminants = (double *)malloc(file.nMatrix * sizeof(double));
+
+  fip++;                                                                         /* increment file insertion pointer */
+
+  if ((statusProd = pthread_mutex_unlock (&accessCR)) != 0)                                          /* exit monitor */
+     { errno = statusProd;                                                                    /* save error in errno */
        perror ("error on exiting monitor(CF)");
        statusProd = EXIT_FAILURE;
        pthread_exit (&statusProd);
      }
 }
 
+/**
+ *  \brief 
+ *
+ *  Retrieve file's data info from the shared region
+ *  Executed by the main thread
+ *  \return file's data info, matrixFile structure
+ *
+ */
 struct matrixFile * getFileData ()
 {
   struct matrixFile * toRetrieve;
 
-    toRetrieve = (files+frp);
+  toRetrieve = (files+frp);                                                /* retrieve file at frp position in files */
 
-    frp = (frp + 1) % totalFileCount;
-    
-  
+  frp = (frp + 1) % totalFileCount;                                         /* increase file retrieval pointer value */
  
   return toRetrieve;
 }
 
+/**
+ *  \brief 
+ *  
+ *  Insert matrix into the FIFO Queue matrices to be processed
+ *  If the Queue is full, wait until space is available to insert.
+ *  Afterwards, signal a consumer about the existance of a new matrix in the queue
+ *  Executed by the main thread
+ *  \param matrix to be added, matrixData structure
+ *
+ */
 void putMatrixInFifo (struct matrixData matrix)
 {
-  if ((statusProd = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
-     { errno = statusProd;                                                            /* save error in errno */
+  if ((statusProd = pthread_mutex_lock (&accessCR)) != 0)                                           /* enter monitor */
+     { errno = statusProd;                                                                    /* save error in errno */
        perror ("error on entering monitor(CF)");
        statusProd = EXIT_FAILURE;
        pthread_exit (&statusProd);
      }                                         
 
-  while (full)                                                           /* wait if the data transfer region is full */
+  while (full)                                                    /* wait if the data transfer region (FIFO) is full */
   { if ((statusProd = pthread_cond_wait (&fifoFull, &accessCR)) != 0)
-       { errno = statusProd;                                                          /* save error in errno */
+       { errno = statusProd;                                                                  /* save error in errno */
          perror ("error on waiting in fifoFull");
          statusProd = EXIT_FAILURE;
          pthread_exit (&statusProd);
        }
   }
 
-  matrices[ii] = matrix;                                                                          /* store value in the FIFO */
-  ii = (ii + 1) % K;
+  matrices[ii] = matrix;                                                             /* insert matrix at ii position */
+  ii = (ii + 1) % K; 
   full = (ii == ri);
 
-  if ((statusProd = pthread_cond_signal (&fifoEmpty)) != 0)      /* let a consumer know that a value has been
-                                                                                                               stored */
-     { errno = statusProd;                                                             /* save error in errno */
+  if ((statusProd = pthread_cond_signal (&fifoEmpty)) != 0)        /* let a worker know that a value has been stored */
+     { errno = statusProd;                                                                    /* save error in errno */
        perror ("error on signaling in fifoEmpty");
        statusProd = EXIT_FAILURE;
        pthread_exit (&statusProd);
      }
 
-  if ((statusProd = pthread_mutex_unlock (&accessCR)) != 0)                                  /* exit monitor */
-     { errno = statusProd;                                                            /* save error in errno */
+  if ((statusProd = pthread_mutex_unlock (&accessCR)) != 0)                                          /* exit monitor */
+     { errno = statusProd;                                                                    /* save error in errno */
        perror ("error on exiting monitor(CF)");
        statusProd = EXIT_FAILURE;
        pthread_exit (&statusProd);
@@ -155,60 +193,72 @@ void putMatrixInFifo (struct matrixData matrix)
 }
 
 
-
+/**
+ *  \brief 
+ *
+ *  Retrieve matrix info from the FIFO Queue matrices to be processed
+ *  If the Queue is empty, wait until a matrix is inserted.
+ *  Afterwards, signal the main  about the existance of a new matrix in the queue
+ *  
+ *  \param val matrixData structure to be filled with the retrieved matrix's info
+ *  \param consId worker thread's id
+ *  \return if there are still files to be processed returns 0, otherwise returns -1
+ *
+ */
 int getSingleMatrixData(unsigned int consId, struct matrixData *val)
 {
-                                                                        /* retrieved value */
-  int toReturn = -1;
-  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
-     { errno = statusWorker[consId];                                                            /* save error in errno */
+  int toReturn = -1;                                                                         /* value to be returned */
+  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                 /* enter monitor */
+     { errno = statusWorker[consId];                                                          /* save error in errno */
        perror ("error on entering monitor(CF)");
        statusWorker[consId] = EXIT_FAILURE;
        pthread_exit (&statusWorker[consId]);
-     }                                          /* internal data initialization */
+     }                                         
 
-  while ((ii == ri) && !full && (fCounter!=totalFileCount))                                           /* wait if the data transfer region is empty */
+  while ((ii == ri) && !full && (fCounter!=totalFileCount))         /* wait if the data transfer region is empty and not 
+                                                                                       all files have been processed */
     { 
       if ((statusWorker[consId] = pthread_cond_wait (&fifoEmpty, &accessCR)) != 0)
-        { errno = statusWorker[consId];                                                          /* save error in errno */
+        { errno = statusWorker[consId];                                                       /* save error in errno */
           perror ("error on waiting in fifoEmpty");
           statusWorker[consId] = EXIT_FAILURE;
           pthread_exit (&statusWorker[consId]);
         }
     }
-    if (fCounter != totalFileCount){
-        val->fileIndex = matrices[ri].fileIndex;
-        val->matrixNumber = matrices[ri].matrixNumber;
-        val->order = matrices[ri].order;
-        val->determinant = matrices[ri].determinant;
-        val->matrix = matrices[ri].matrix;
-        val->processed = matrices[ri].processed;
-        
-     
-        ri = (ri + 1) % K;
 
-        if (((struct matrixFile *)(files+val->fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+val->fileIndex))->nMatrix-1){
-          fCounter++;
+
+  if (fCounter != totalFileCount){                       /* retrieve matrix if not all files have been processed yet */
+      val->fileIndex = matrices[ri].fileIndex;
+      val->matrixNumber = matrices[ri].matrixNumber;
+      val->order = matrices[ri].order;
+      val->determinant = matrices[ri].determinant;
+      val->matrix = matrices[ri].matrix;
+      val->processed = matrices[ri].processed;
+      
+    
+      ri = (ri + 1) % K;
+
+      /* if all matrixes have been processed, increment processed file counter */
+      if (((struct matrixFile *)(files+val->fileIndex))->processedMatrixCounter == ((struct matrixFile *)(files+val->fileIndex))->nMatrix-1){
+        fCounter++;
+      }
+
+      ((struct matrixFile *)(files+val->fileIndex))->processedMatrixCounter++;                  /* increment counter of 
+                                                                                                  processed matrices */
+      full = false;                                                                       /* queue is no longer full */
+      
+      if ((statusWorker[consId] = pthread_cond_signal (&fifoFull)) != 0)             /* let the main thread know that a
+                                                                                            value has been retrieved */
+        { errno = statusWorker[consId];                                                       /* save error in errno */
+          perror ("error on signaling in fifoFull");
+          statusWorker[consId] = EXIT_FAILURE;
+          pthread_exit (&statusWorker[consId]);
         }
+      toReturn = 0;                                                                   
+  }
 
-        ((struct matrixFile *)(files+val->fileIndex))->processedMatrixCounter++;
-        full = false;
-        if ((statusWorker[consId] = pthread_cond_signal (&fifoFull)) != 0)       /* let a producer know that a value has been
-                                                                                                                  retrieved */
-          { errno = statusWorker[consId];                                                             /* save error in errno */
-            perror ("error on signaling in fifoFull");
-            statusWorker[consId] = EXIT_FAILURE;
-            pthread_exit (&statusWorker[consId]);
-          }
-        toReturn = 0;
-    }
-    
-  
-  
-    
-
-  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
-     { errno = statusWorker[consId];                                                             /* save error in errno */
+  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                /* exit monitor */
+     { errno = statusWorker[consId];                                                          /* save error in errno */
        perror ("error on exiting monitor(CF)");
        statusWorker[consId] = EXIT_FAILURE;
        pthread_exit (&statusWorker[consId]);
@@ -217,22 +267,35 @@ int getSingleMatrixData(unsigned int consId, struct matrixData *val)
   return toReturn;
 }
 
+/**
+ *  \brief 
+ *
+ *  Insert processed matrix's results into the file's determinants array
+ *  If all files have been processed and no matrices are left to be processed, signal all waiting workers 
+ *  to end lifecycle.
 
+ *  \param consId worker thread's id
+ *  \param determinant determinant of the processed matrix
+ *  \param fileIndex index of processed matrix's file in the files array
+ *  \param matrixNumber index of the matrix in its file
+ *
+ */
 void putResults(unsigned int consId,double determinant,int fileIndex,int matrixNumber)
 {
-  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
-     { errno = statusWorker[consId];                                                            /* save error in errno */
+  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                 /* enter monitor */
+     { errno = statusWorker[consId];                                                          /* save error in errno */
        perror ("error on entering monitor(CF)");
        statusWorker[consId] = EXIT_FAILURE;
        pthread_exit (&statusWorker[consId]);
      }     
-  (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant; 
+  (*((((struct matrixFile *)(files+fileIndex))
+    ->matrixDeterminants) + matrixNumber)) = determinant;        /* add determinant in the file's determinants array */
   
   if (fCounter == totalFileCount){ 
-    pthread_cond_broadcast(&fifoEmpty);
+    pthread_cond_broadcast(&fifoEmpty);                                               /* signal all  waiting workers */
   }
-  
-  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
+
+  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                /* exit monitor */
   { errno = statusWorker[consId];                                                             /* save error in errno */
     perror ("error on exiting monitor(CF)");
     statusWorker[consId] = EXIT_FAILURE;
