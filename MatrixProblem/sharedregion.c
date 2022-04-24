@@ -1,4 +1,34 @@
 
+/**
+ *  \file sharedregion.c (implementation file)
+ *
+ *  \brief 
+ *
+ *  Synchronization based on monitors.
+ *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
+ *  monitor of the Lampson / Redell type.
+ *
+ *  Data transfer region implemented as a monitor.
+ *  Includes 2 main data regions:
+ *     \li files is an array of matrixFile structures, containing information about a processed file
+ *     \li matrices is the FIFO Queue of matrices to be processed by the workers
+ * 
+ *  
+ *  Definition of the operations carried out by the workers and main thread:
+ *  Executed by the main thread:
+ *     \li putFileData - Inserts a file info in the shared region
+ *     \li putMatrixInFifo - Inserts a Matrix in the FIFO Queue for processing
+ *     \li getFileData  - Returns a file's information from the files array
+ * Executed by the worker threads:
+ *     \li getSingleMatrixData - Retrieved a single matrix from the FIFO Queue
+ *     \li putResults - Inserts results of the processed matrix into the correct file in the files array
+ *
+ *  \author Pedro Marques - April 2022
+ */
+
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
