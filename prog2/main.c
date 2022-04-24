@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
     printf("Order of the matrices  %d\n", file->order);
 
     for (int o =0;o<file->nMatrix; o++){
-      printf("\tMatrix %d Result: Determinant = %.3f \n", o+1,file->matrixDeterminants[o]);
+      printf("\tMatrix %d Result: Determinant = %.3e \n", o+1,file->matrixDeterminants[o]);
     }
         
   }
