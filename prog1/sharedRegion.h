@@ -9,16 +9,27 @@
  *
  *  Data transfer region implemented as a monitor.
  *
+ *  This shared region will utilize the array of structures initialized by
+ *  the main thread.
+ * 
+ *  Workers can access the shared region to obtain data to process from that
+ *  array of structures. They can also store the partial results of the
+ *  processing done.
+ * 
+ *  There is also a function to print out the final results, that should be
+ *  used after there is no more data to be processed.
+ * 
  *  Monitored Methods:
- *     \li savePartialResults - operation carried out by worker threads.
  *     \li getData - operation carried out by worker threads.
+ *     \li savePartialResults - operation carried out by worker threads.
  *
  *  Unmonitored Methods:
- *     \li initialData - operation carried out by the main thread.
+ *     \li putInitialData - operation carried out by the main thread.
  *     \li printResults - operation carried out by the main thread.
  *
  *  \author Mário Silva - April 2022
  */
+
 
 #ifndef MONITOR_H
 #define MONITOR_H
@@ -67,7 +78,7 @@ struct filePartialData
  *
  *  \param fileNames contains the names of the files to be stored
  */
-extern void initialData(char *fileNames[]);
+extern void putInitialData(char *fileNames[]);
 
 /**
  *  \brief Store the results of text processing in the data transfer region.

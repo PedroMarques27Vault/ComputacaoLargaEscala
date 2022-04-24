@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
 
   /* set up structures to be used on the monitor and shared regions */
 
-  initialData(fileNames);
+  putInitialData(fileNames);
 
   /* generation of worker threads */
 

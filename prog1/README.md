@@ -2,7 +2,7 @@
 
 ### How to compile:
 
-	gcc -Wall -g -O3 -o prog1 main.c processingSharedRegion.c resultsSharedRegion.c textProcUtils.c
+	gcc -Wall -g -O3 -o prog1 main.c sharedRegion.c textProcUtils.c
 
 ### How to run:
 
