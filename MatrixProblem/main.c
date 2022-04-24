@@ -1,12 +1,24 @@
 /**
- *  \file main.c
+ *  \file main.c 
  *
- *  \brief
+ *  \brief Matrix Determinant Calculation With Multithreading.
+ * 
+ *  The objective is to matrices within files and calculate their determinant.
  *
- TODO
+ *  The main thread is responsible for reading the matrices from files and providing them to
+ *  the shared region. Aferwards, worker threads should retrieve them and calculate the determinant.
+ *  Then, these results are saved in the shared region where the main thread can retrieve them and 
+ *  present them. 
  *
- *  \author 
+ *  Synchronization based on monitors.
+ *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
+ *  monitor of the Lampson / Redell type.
+ *
+ *  Generator thread of the intervening entities.
+ *
+ *  \author Pedro Marques - April 2022
  */
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,12 +35,15 @@
 #include <libgen.h>
 #include <string.h>
 
+
+/** \brief shared region initialization */
 extern void initialization(int _totalFileCount, int _K);
 
+/** \brief prints explanation of how to run code */
 static void printUsage(char *cmdName);
+
 /** \brief worker threads return status array */
 int *statusWorker;
-
 
 /** \brief worker life cycle routine */
 static void *worker(void *id);
@@ -37,22 +52,39 @@ static void *worker(void *id);
 /**
  *  \brief Main thread.
  *
- *  TODO
+ *  Design and flow of the main thread:
+ *
+ *  1 - Process the arguments from the command line.
+ *
+ *  2 - Initialize the shared region with the necessary structures.
+ *
+ *  3 - Create the worker threads.
+ * 
+ *  4 - Continuously provide matrices to the shared region, for the worker to process
+ *
+ *  5 - Wait for the worker threads to terminate.
+ *
+ *  6 - Print final results.
+ *
+ *  \param argc number of words of the command line
+ *  \param argv list of words of the command line
+ *
+ *  \return status of operation
  */
 
 int main(int argc, char *argv[])
 {
-  int N = 8;                                                                /* number of worker threads. Default = 4 */
-  int K = 12;                                                                   /*Size of FIFO Queue in Shared Region*/
+  int N = 8;                                                                             /* number of worker threads */
+  int K = 12;                                                                  /*Size of FIFO Queue in Shared Region */
 
-  int *status_p;                                                                   
-  char *filenames[10];
+ 
+  char *filenames[10];                                                                     /* array of file's names  */
+  int fnip = 0;                                                                        /* filename insertion pointer */
+  int opt;                                                                                        /* selected option */
 
 
-  int fnip = 0;
-  int opt;                                       /* selected option */
-
-  do
+  // argument handling
+  do  
   {
     switch ((opt = getopt(argc, argv, "f:n:k:")))
     {
@@ -63,6 +95,13 @@ int main(int argc, char *argv[])
         printUsage(basename(argv[0]));
         return EXIT_FAILURE;
       }
+      if (fnip>=10) /* at most 10 files */                                    
+      {
+        fprintf(stderr, "%s: Too many files to unpack. At Most 10\n", basename(argv[0]));
+        printUsage(basename(argv[0]));
+        return EXIT_FAILURE;
+      }
+
       filenames[fnip++] = optarg;
       break;
     case 'n': /* numeric argument */
@@ -104,27 +143,28 @@ int main(int argc, char *argv[])
 
   pthread_t tIdCons[N];                                                        /* consumers internal thread id array */
   unsigned int cons[N];                                             /* consumers application defined thread id array */
-
+  int *status_p;                                                                      /* pointer to execution status */                            
+  
   struct timespec start, finish;                                                                      /* time limits */
 
-  clock_gettime (CLOCK_MONOTONIC_RAW, &start);                              /* begin of measurement */
-  statusWorker = malloc(sizeof(int) * N);
+  clock_gettime (CLOCK_MONOTONIC_RAW, &start);                                          /* begin of time measurement */
+  
+  statusWorker = malloc(sizeof(int) * N);                       /* memory allocation of worker's return status array */
 
-
-  for (int i = 0; i < N; i++)
+  for (int i = 0; i < N; i++)                                                          /* incremental id attribution */
     cons[i] = i;
 
 
-  initialization(fnip,K);
+  initialization(fnip,K);                                                     /* initialization of the shared region */
 
-  for (int i = 0; i < N; i++)
-    if (pthread_create (&tIdCons[i], NULL, worker, &cons[i]) != 0)                             /* thread consumer */
+  for (int i = 0; i < N; i++)                                                             /* worker htreads creation */
+    if (pthread_create (&tIdCons[i], NULL, worker, &cons[i]) != 0)                                  /* thread worker */
        { perror ("error on creating thread consumer");
          exit (EXIT_FAILURE);
        }
 
-  /* waiting for the termination of the intervening entities threads */
-  for (int fCk = 0;fCk<fnip;fCk++){
+  
+  for (int fCk = 0;fCk<fnip;fCk++){                                          /* process each file in filenames array */
 
     FILE *fp = fopen(filenames[fCk], "r");
 
@@ -133,63 +173,62 @@ int main(int argc, char *argv[])
         printf("Error: could not open file %s", filenames[fCk]);
         return 1;
     }
-    // number of matrices in the file
+
     int numMatrix;
-    fread(&numMatrix, 4, 1, fp);
+    fread(&numMatrix, 4, 1, fp);                                               /* get number of matrices in the file */
     
-    // order of matrices
     int order;
-    fread(&order, 4, 1, fp);
+    fread(&order, 4, 1, fp);                                                /* get order of the matrices in the file */
     
-    struct matrixFile curFile;
+    
+    struct matrixFile curFile;                                         /* initialize structure with file information */
     curFile.filename = filenames[fCk];
     curFile.processedMatrixCounter = 0;
-
     curFile.order = order;
     curFile.nMatrix = numMatrix;
 
 
-    putFileData (curFile);
+    putFileData (curFile);                    /* insert the current file's info into the shared region's files array */
 
-    // iterate over each matrix
-    int incMCount = 0;
-    while(incMCount!=numMatrix){
+
+    int incMCount = 0;                                                                 /* incremental matrix counter */
+    while(incMCount!=numMatrix){                                     /* iterate over each matrix in the current file */
    
-
-
-      struct matrixData  curMatrix;
+      struct matrixData  curMatrix;                               /* initialize structure with current matrix's info */
       curMatrix.fileIndex = fCk;
       curMatrix.matrixNumber = incMCount;
       curMatrix.order = order;
       curMatrix.determinant = 0;
       curMatrix.processed = 0;
 
-      curMatrix.matrix = (double *)malloc(order * order * sizeof(double));
+      curMatrix.matrix = (double *)malloc(order * order * sizeof(double));        /* memory allocation of the matrix */
   
-      fread(curMatrix.matrix, 8, order*order, fp);
+      fread(curMatrix.matrix, 8, order*order, fp);                                     /* read full matrix from file */
      
-
-      putMatrixInFifo (curMatrix);
+      putMatrixInFifo (curMatrix);                        /* add matrix to the shared region's FIFO processing queue */
 
       incMCount++;
     }
     
   
   }
- 
+  
+  /* waiting for the termination of the intervening worker threads */
   for (int i = 0; i < N; i++)
-  { if (pthread_join (tIdCons[i], (void *) &status_p) != 0)                                       /* thread consumer */
+  { if (pthread_join (tIdCons[i], (void *) &status_p) != 0)                                       
        { perror ("error on waiting for thread customer");
          exit (EXIT_FAILURE);
        }
     printf ("thread consumer, with id %u, has terminated: ", i);
     printf ("its status was %d\n", *status_p);
   }
-  
-  for (int g=0; g<fnip; g++) {
-    struct matrixFile *file = getFileData();
-    printf("\nMatrix File  %s\n", file->filename);
 
+
+  
+  for (int g=0; g<fnip; g++) {                                                     /* printing results for each file */
+    struct matrixFile *file = getFileData();                                     /* retrieve file from shared region */
+    
+    printf("\nMatrix File  %s\n", file->filename);
     printf("Number of Matrices  %d\n", file->nMatrix);
     printf("Order of the matrices  %d\n", file->order);
 
@@ -199,39 +238,50 @@ int main(int argc, char *argv[])
         
   }
 
-  clock_gettime (CLOCK_MONOTONIC_RAW, &finish);                                /* end of measurement */
+  clock_gettime (CLOCK_MONOTONIC_RAW, &finish);                                                /* end of measurement */
   printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
   exit (EXIT_SUCCESS);
 
 }
+/**
+ *  \brief Function worker.
+ *  Worker's life cycle
+ * 
+ *  Its role is to process a matrix and calculate its determinant.
+ *
+ *  \param wid pointer to application defined worker identification
+ */
 
 static void *worker(void *wid)
 {
   unsigned int id = *((unsigned int *)wid); /* worker id */
 
   while(true){
-    
-      struct matrixData  *curMatrix = (struct matrixData *)malloc(sizeof(struct matrixData));
-      int contin = getSingleMatrixData(id, curMatrix);
-      if (contin == -1) {
+      struct matrixData  *curMatrix = (struct matrixData *)malloc(sizeof(struct matrixData));   /* matrix to be processed
+                                                                                                  memory alocation   */
+      int contin = getSingleMatrixData(id, curMatrix);                          /* retrive matrix from shared region */
+      if (contin == -1) {                                        /* if all files have been processed, end life cycle */
         break;
       }
-      double det = getDeterminant(curMatrix->order,curMatrix->matrix);
+      double det = getDeterminant(curMatrix->order,curMatrix->matrix);                     /* calculate determinant  */
 
-      putResults(id,det, curMatrix->fileIndex, curMatrix->matrixNumber);
-      curMatrix->processed =1;
-      
+      putResults(id,det, curMatrix->fileIndex, curMatrix->matrixNumber);      /* insert results in the shared region */
+    
+      free(curMatrix);                                                                      /* free allocated memory */
   }
- 
-
  
   statusWorker[id] = EXIT_SUCCESS;
   pthread_exit (&statusWorker[id]);
-  return 0;
 }
 
-
+/**
+ *  \brief Print command usage.
+ *
+ *  A message specifying how the program should be called is printed.
+ *
+ *  \param cmdName string with the name of the command
+ */
 static void printUsage(char *cmdName)
 {
   fprintf(stderr, "\nSynopsis: %s OPTIONS [filename / number of threads / size of the FIFO queue]\n"
