@@ -1,3 +1,13 @@
+/**
+ *  \file matrixutils.c
+ *
+ *  \brief Problem name: Matrix Determinant Calculation With Multithreading.
+
+ *  Utility functions to calculate the determinant of a matrix
+ *
+ *  \author Pedro Marques - April 2022
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5,7 +15,14 @@
 #include <math.h>
 
 
-
+/**
+ *  \brief 
+ *  Calculates the determinant of a given matrix
+ *  \param matrix the matrix to be processed
+ *  \param argv order of the matrix
+ *
+ *  \return the determinant of the matrix
+ */
 double getDeterminant(int order, double *matrix){
     int i,j,k;
     int swaps = 0;
@@ -34,7 +51,6 @@ double getDeterminant(int order, double *matrix){
     }
     
     double det = 1;
-
     for(int i=0; i<order; i++){
         det *= (*((matrix+i*order) + i));
     }

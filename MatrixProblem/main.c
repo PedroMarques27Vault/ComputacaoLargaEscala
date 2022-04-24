@@ -1,7 +1,7 @@
 /**
  *  \file main.c 
  *
- *  \brief Matrix Determinant Calculation With Multithreading.
+ *  \brief  Problem name: Matrix Determinant Calculation With Multithreading.
  * 
  *  The objective is to matrices within files and calculate their determinant.
  *
@@ -28,6 +28,7 @@
 #include <time.h>
 #include <stdbool.h>
 
+#include "probConst.h"
 #include "matrixutils.h"
 #include "sharedregion.h"
 #include <stdbool.h>
@@ -74,8 +75,8 @@ static void *worker(void *id);
 
 int main(int argc, char *argv[])
 {
-  int N = 8;                                                                             /* number of worker threads */
-  int K = 12;                                                                  /*Size of FIFO Queue in Shared Region */
+  int N = DN;                                                                             /* number of worker threads */
+  int K = M;                                                                  /*Size of FIFO Queue in Shared Region */
 
  
   char *filenames[10];                                                                     /* array of file's names  */
@@ -199,7 +200,6 @@ int main(int argc, char *argv[])
       curMatrix.matrixNumber = incMCount;
       curMatrix.order = order;
       curMatrix.determinant = 0;
-      curMatrix.processed = 0;
 
       curMatrix.matrix = (double *)malloc(order * order * sizeof(double));        /* memory allocation of the matrix */
   

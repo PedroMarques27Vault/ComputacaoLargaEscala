@@ -2,7 +2,7 @@
 /**
  *  \file sharedregion.c (implementation file)
  *
- *  \brief 
+ *  \brief Problem name: Matrix Determinant Calculation With Multithreading.
  *
  *  Synchronization based on monitors.
  *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
@@ -263,7 +263,6 @@ int getSingleMatrixData(unsigned int consId, struct matrixData *val)
       val->order = matrices[ri].order;
       val->determinant = matrices[ri].determinant;
       val->matrix = matrices[ri].matrix;
-      val->processed = matrices[ri].processed;
       
     
       ri = (ri + 1) % K;
