@@ -224,6 +224,7 @@ int main(int argc, char *argv[])
   }
 
 
+  clock_gettime (CLOCK_MONOTONIC_RAW, &finish);   
   
   for (int g=0; g<fnip; g++) {                                                     /* printing results for each file */
     struct matrixFile *file = getFileData();                                     /* retrieve file from shared region */
@@ -233,12 +234,11 @@ int main(int argc, char *argv[])
     printf("Order of the matrices  %d\n", file->order);
 
     for (int o =0;o<file->nMatrix; o++){
-      printf("\tMatrix %d Result: Determinant = %.3f \n", o+1,file->matrixDeterminants[o]);
+      printf("\tMatrix %d Result: Determinant = %.3e \n", o+1,file->matrixDeterminants[o]);
     }
         
   }
-
-  clock_gettime (CLOCK_MONOTONIC_RAW, &finish);                                                /* end of measurement */
+                                             /* end of measurement */
   printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
   exit (EXIT_SUCCESS);
