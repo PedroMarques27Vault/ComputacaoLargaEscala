@@ -7,10 +7,12 @@
 ### How to run:
 
 Arguments:
-    -h --- print usage
-    -f --- filename to process
-    -n --- number of threads
-    -m --- maximum number of bytes per chunk
+
+	-h --- print usage
+	-f --- filename to process
+	-n --- number of threads
+	-m --- maximum number of bytes per chunk
 
 Example:
-    ./prog1 -f texts/text0.txt -f texts/text1.txt -n 8 -m 2000
+
+	./prog1 -f texts/text0.txt -f texts/text1.txt -n 8 -m 2000
