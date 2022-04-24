@@ -2,7 +2,7 @@
 
 ### Main Objective:
 
-Process file texts efficiently by splitting processing load for worker threads.
+Count the number of words, words starting with vowels and words ending in consonants, efficiently,  by splitting processing load for worker threads.
 
 ### Multithreaded Implementation:
 
