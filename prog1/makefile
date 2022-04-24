@@ -1,2 +1,2 @@
 all: main.c 
-	gcc -Wall -g -O3 -o prog1 main.c processingSharedRegion.c resultsSharedRegion.c textProcFunctions.c
+	gcc -Wall -g -O3 -o prog1 main.c processingSharedRegion.c resultsSharedRegion.c textProcUtils.c

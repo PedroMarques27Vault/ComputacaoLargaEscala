@@ -1,32 +1,22 @@
 /**
- *  \file monitor.c (implementation file)
+ *  \file processingSharedRegion.c (implementation file)
  *
- *  \brief
+ *  \brief Shared Region for obtaining data to process.
  *
  *  Synchronization based on monitors.
  *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
  *  monitor of the Lampson / Redell type.
  *
- *  Shared region implemented as a monitor.
+ *  Data transfer region implemented as a monitor.
  *
- *  It keeps one array of fileData structures:
- *      file: char[] fileName, FILE fp, int bytesRead, double totalBytes, bool processed, int nWords (etc);
- *  One for storing data associated to reading the file, and the other for storing the results.
+ *  This shared region will utilize the array of structures initialized by
+ *  the main thread to store the results of the processing done by the workers.
  *
- *  Monitored Functions:
- *    A worker can execute the function getData which will:
- *      Get a File from the list of Files to be processed.
- *      Read the last part of the chunk until it reaches a white space, separator or punctuation.
- *      Store the number of bytes read in addition to the chunksize.
- *      Increment by one the the current file index if the file has been fully read.
+ *  Monitored Methods:
+ *     \li getData - operation carried out by worker threads.
  *
- *      Return to the worker the fileName, the initial byte to start processing and the size to read.
- *
- *    A worker also publishes results with the function savePartialResults:
- *      Stores results associated to a File.
- *
- *  There is another function, getResults, which will return the results of each file.
- *
+ *  Unmonitored Methods:
+ *     \li initialData - operation carried out by the main thread.
  *
  *  \author Mário Silva - April 2022
  */
@@ -37,7 +27,7 @@
 #include <errno.h>
 
 #include "sharedRegion.h"
-#include "textProcFunctions.h"
+#include "textProcUtils.h"
 
 /** \brief worker threads return status array */
 extern int *statusWorker;

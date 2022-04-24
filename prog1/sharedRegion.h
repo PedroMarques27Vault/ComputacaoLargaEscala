@@ -1,9 +1,21 @@
 /**
  *  \file sharedRegion.h (interface file)
  *
- *  \brief Problem name: Text Processing with Multithreading.
+ *  \brief Shared Region for the text processing.
  *
+ *  Synchronization based on monitors.
+ *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
+ *  monitor of the Lampson / Redell type.
  *
+ *  Data transfer region implemented as a monitor.
+ *
+ *  Monitored Methods:
+ *     \li savePartialResults - operation carried out by worker threads.
+ *     \li getData - operation carried out by worker threads.
+ *
+ *  Unmonitored Methods:
+ *     \li initialData - operation carried out by the main thread.
+ *     \li printResults - operation carried out by the main thread.
  *
  *  \author Mário Silva - April 2022
  */

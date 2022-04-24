@@ -28,7 +28,7 @@
 #include <libgen.h>
 
 #include "sharedRegion.h"
-#include "textProcFunctions.h"
+#include "textProcUtils.h"
 #include "probConst.h"
 
 /** \brief worker threads return status array */
@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
 {
   struct timespec start, finish; /* time limits */
 
-  // timer starts
+  /* timer starts */
   clock_gettime(CLOCK_MONOTONIC_RAW, &start); /* begin of measurement */
 
   /* process command line arguments and set up variables */
@@ -168,14 +168,13 @@ int main(int argc, char *argv[])
     }
   }
 
-  // timer ends
+  /* timer ends */
   clock_gettime(CLOCK_MONOTONIC_RAW, &finish); /* end of measurement */
 
   /* print the results of the text processing */
-
   printResults();
 
-  // calculate the elapsed time
+  /* calculate the elapsed time */
   printf("\nElapsed time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
   exit(EXIT_SUCCESS);
@@ -184,11 +183,11 @@ int main(int argc, char *argv[])
 /**
  *  \brief Function worker.
  *
- *  Its role is to perform text processing on chunks of data.
+ *  Its role is to perform text processing on chunks of data, after obtaining
+ *  the chunk from the shared region, and then save the processing results.
  *
  *  \param wid pointer to application defined worker identification
  */
-
 static void *worker(void *wid)
 {
   unsigned int id = *((unsigned int *)wid); /* worker id */

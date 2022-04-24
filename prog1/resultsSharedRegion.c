@@ -1,10 +1,22 @@
 /**
  *  \file resultsSharedRegion.c (implementation file)
  *
- *  \brief Monitor for the text processing results.
+ *  \brief Shared Region for the text processing results.
  *
+ *  Synchronization based on monitors.
+ *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
+ *  monitor of the Lampson / Redell type.
  *
+ *  Data transfer region implemented as a monitor.
  *
+ *  This shared region will utilize the array of structures initialized by
+ *  the main thread to store the results of the processing done by the workers.
+ *
+ *  Monitored Methods:
+ *     \li savePartialResults - operation carried out by worker threads.
+ *
+ *  Unmonitored Methods:
+ *     \li printResults - operation carried out by the main thread.
  *
  *  \author Mário Silva - April 2022
  */
@@ -34,7 +46,7 @@ static pthread_mutex_t accessCR = PTHREAD_MUTEX_INITIALIZER;
  *  Operation carried out by the workers.
  *
  *  \param workerId worker identification
- *  \param data structure with the results to be stored
+ *  \param partialData structure with the results to be stored
  */
 void savePartialResults(unsigned int workerId, struct filePartialData *partialData)
 {

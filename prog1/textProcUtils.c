@@ -1,14 +1,38 @@
+/**
+ *  \file textProcUtils.h (interface file)
+ *
+ *  \brief Problem name: Text Processing with Multithreading.
+ *
+ *  Functions used for text processing.
+ *
+ *  \author Mário Silva - April 2022
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 
 #include "sharedRegion.h"
 
+/**
+ *  \brief Checks if the given character is a alpha character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is alpha or not.
+ */
 int isAlpha(int ch)
 {
   return ((65 <= ch && ch <= 90) || (97 <= ch && ch <= 122));
 }
 
+/**
+ *  \brief Checks if the given character is a vowel.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is a vowel or not.
+ */
 int isVowel(int ch)
 {
   return ((ch == 65) || (ch == 69) || (ch == 73) || (ch == 79) ||
@@ -16,17 +40,37 @@ int isVowel(int ch)
           (ch == 111) || (ch == 117));
 }
 
-// checks is the char is alpha and not a vowel
+/**
+ *  \brief Checks if the given character is a consonant.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is consonant or not.
+ */
 int isConsonant(int ch)
 {
   return (isAlpha(ch) && !isVowel(ch));
 }
 
+/**
+ *  \brief Checks if the given character is a white space character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is white space or not.
+ */
 int isWhiteSpace(int ch)
 {
   return ((ch == 9) || (ch == 10) || (ch == 13) || (ch == 32));
 }
 
+/**
+ *  \brief Checks if the given character is a separation character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is separation or not.
+ */
 int isSeparation(int ch)
 {
   return ((ch == 34) || (ch == 40) || (ch == 41) || (ch == 45) ||
@@ -34,27 +78,62 @@ int isSeparation(int ch)
           (ch == 8211) || (ch == 8220) || (ch == 8221));
 }
 
+/**
+ *  \brief Checks if the given character is a punctuation character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is punctuation or not.
+ */
 int isPunctuation(int ch)
 {
   return ((ch == 33) || (ch == 44) || (ch == 46) || (ch == 58) ||
           (ch == 59) || (ch == 63) || (ch == 8212) || (ch == 8230));
 }
 
+/**
+ *  \brief Checks if the given character is a merge character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is merge or not.
+ */
 int isMergeChar(int ch)
 {
   return ((ch == 39) || (ch == 8216) || (ch == 8217));
 }
 
+/**
+ *  \brief Checks if the given character is a underscore character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is underscore or not.
+ */
 int isUnderscore(int ch)
 {
   return (ch == 95);
 }
 
+/**
+ *  \brief Checks if the given character is a numeric character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return character is numeric or not.
+ */
 int isNumeric(int ch)
 {
   return (48 <= ch && ch <= 57);
 }
 
+/**
+ *  \brief Transforms some special characters to a more general character.
+ *
+ *  \param ch UTF8 encoded character
+ *
+ *  \return general representation of the given character.
+ */
 int handleSpecialChars(int ch)
 {
   if ((192 <= ch && ch <= 196) || (224 <= ch && ch <= 228))
@@ -72,47 +151,20 @@ int handleSpecialChars(int ch)
   return ch;
 }
 
-void extractAChar(FILE *fp, int charUTF8Bytes[2])
-{
-  int ch = fgetc(fp);
-
-  // if its the EOF or not a multi byte sequence
-  if (ch == EOF || !(ch & 0x80))
-  {
-    charUTF8Bytes[0] = ch;
-    charUTF8Bytes[1] = 1;
-    return;
-  }
-
-  int seq_len = 1;
-  int c;
-  int fn = ch;
-
-  // find out the number of bytes to read
-  for (; ch & (0x80 >> seq_len); seq_len++)
-  {
-    if ((c = fgetc(fp)) == EOF)
-    {
-      charUTF8Bytes[0] = handleSpecialChars(ch);
-      charUTF8Bytes[1] = seq_len;
-      return;
-    }
-    // shift to add 6 zeros on the right of the final char
-    // and use the 6 most representative bits of the read char
-    fn = (fn << 6) | (c & 0x3F);
-  }
-  // add the initial bits after the sequence length identifier bits
-  ch = fn & ((1 << ((7 - seq_len) + 6 * (seq_len - 1))) - 1);
-
-  charUTF8Bytes[0] = handleSpecialChars(ch);
-  charUTF8Bytes[1] = seq_len;
-}
-
-void extractACharFromBuffer(unsigned char *buffer, int index, int charUTF8Bytes[2])
+/**
+ *  \brief Extracts a character in UTF8 Encoding from a unsigned char buffer.
+ *
+ *   It also counts the number of bytes read to obtain the character.
+ *
+ *  \param buffer buffer to read bytes from
+ *  \param charUTF8Bytes array that will be filled with the first element
+ *  the UTF8 character obtained and the second element the number of bytes read
+ */
+void extractAChar(unsigned char *buffer, int index, int charUTF8Bytes[2])
 {
   int ch = buffer[index++];
 
-  // if its the EOF or not a multi byte sequence
+  /* if its the EOF or not a multi byte sequence */
   if (ch == EOF || !(ch & 0x80))
   {
     charUTF8Bytes[0] = ch;
@@ -123,21 +175,37 @@ void extractACharFromBuffer(unsigned char *buffer, int index, int charUTF8Bytes[
   int seq_len = 1;
   int fn = ch;
 
-  // find out the number of bytes to read
+  /* find out the number of bytes to read */
   while (ch & (0x80 >> seq_len))
   {
-    // shift to add 6 zeros on the right of the final char
-    // and use the 6 most representative bits of the read char
+    /*
+      shift to add 6 zeros on the right of the final char
+      and use the 6 most representative bits of the read char
+    */
     fn = (fn << 6) | (buffer[index++] & 0x3F);
     seq_len++;
   }
-  // add the initial bits after the sequence length identifier bits
+  /* add the initial bits after the sequence length identifier bits */
   ch = fn & ((1 << ((7 - seq_len) + 6 * (seq_len - 1))) - 1);
 
+  /* update the array with the results */
   charUTF8Bytes[0] = handleSpecialChars(ch);
   charUTF8Bytes[1] = seq_len;
 }
 
+/**
+ *  \brief Performs text processing of a chunk.
+ *
+ *  Counts the number of words, words starting with a vowel and words ending with a consonant.
+ *
+ *  Needs to know the previous character to see if the previous chunk was inside a word
+ *  and also if it was and the word ends with the next character, to see if it was a consonant.
+ *
+ *  Operation executed by workers.
+ *
+ *  \param partialData structure that contains the data needed to process
+ *  and will be filled with the results obtained
+ */
 void processChunk(struct filePartialData *partialData)
 {
   // final results variables
@@ -160,64 +228,82 @@ void processChunk(struct filePartialData *partialData)
 
   while (numChars <= partialData->chunkSize)
   {
-    extractACharFromBuffer(partialData->chunk, numChars, charUTF8Bytes);
+    /* extract a UTF8 encoded character from the buffer */
+    extractAChar(partialData->chunk, numChars, charUTF8Bytes);
+
     ch = charUTF8Bytes[0];
 
     numChars += charUTF8Bytes[1];
 
-    // if its not processing any word
-    // and the char is alfa, numeric or a underscore
+    /*
+      if its not processing any word
+      and the char is alfa, numeric or a underscore
+    */
     if (!inWord &&
         (isAlpha(ch) || isNumeric(ch) || isUnderscore(ch)))
     {
-      // check if the start of the word is a vowel
+      /* check if the start of the word is a vowel */
       if (isVowel(ch))
         nWordsBV++;
-      // processing a new word
+      /* processing a new word */
       inWord = true;
-      // update previous read char
+      /* update previous read char */
       previousCh = ch;
-      // increase one word
+      /* increase one word */
       nWords++;
     }
-    // if its processing a word
+    /* if its processing a word */
     else if (inWord)
     {
-      // if its a char that merges words
-      // update the previous read char value
-      // and continue reading next chars
+      /*
+        if its a char that merges words
+        update the previous read char value
+        and continue reading next chars
+      */
       if (isMergeChar(ch) || isAlpha(ch) ||
           isNumeric(ch) || isUnderscore(ch))
         previousCh = ch;
-      // else if its a white space, separation, punctuation char
-      // or the end of the file
-      // it means the current word has ended
+      /*
+        else if its a white space, separation, punctuation char
+        or the end of the file
+        it means the current word has ended
+      */
       else if (isWhiteSpace(ch) ||
                isSeparation(ch) ||
                isPunctuation(ch) ||
                ch == EOF)
       {
-        // checking if the last previous read char value is a consonant
+        /* checking if the last previous read char value is a consonant */
         if (isConsonant(previousCh))
           nWordsEC++;
 
-        // end processing the word
+        /* end processing the word */
         inWord = false;
       }
     }
   }
 
+  /* update the structure with the results */
   partialData->nWords = nWords;
   partialData->nWordsBV = nWordsBV;
   partialData->nWordsEC = nWordsEC;
 }
 
-
-
+/**
+ *  \brief Reads bytes from the file until it reads a full UTF8 encoded character.
+ *
+ *  Adds the bytes read to the given buffer.
+ *  Updates the chunk size of the given structure.
+ *  Obtains the last character of the given chunk as the previous character.
+ *  Operation executed by workers.
+ *
+ *  \param data fileData structure that has the file pointer to read from and will
+ *  be updated with the last character of the given chunk.
+ *  \param partialData filePartialData structure that contains the chunk and chunk size.
+ */
 void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *partialData)
 {
   /* read the next unsigned char from the file and add it to partial data */
-
   int ch = fgetc(data->fp);
   (partialData->chunk)[partialData->chunkSize++] = ch;
 
@@ -226,7 +312,6 @@ void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *part
     add to the byte read to the chunk of the partial data
     update chunk size of the partial data
   */
-
   while ((ch & 0xC0) == 0x80)
   {
     ch = fgetc(data->fp);
@@ -234,7 +319,6 @@ void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *part
   }
 
   /* if its the EOF or not a multi byte sequence */
-
   if (ch == EOF || !(ch & 0x80))
   {
     data->previousCh = ch;
@@ -253,8 +337,8 @@ void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *part
     c = fgetc(data->fp);
     (partialData->chunk)[partialData->chunkSize++] = c;
     /*
-        shift to add 6 zeros on the right of the final char
-        and use the 6 most representative bits of the read char
+      shift to add 6 zeros on the right of the final char
+      and use the 6 most representative bits of the read char
     */
     fn = (fn << 6) | ((partialData->chunk)[partialData->chunkSize++] & 0x3F);
     seq_len++;

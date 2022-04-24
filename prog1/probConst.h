@@ -14,15 +14,15 @@
 /* Generic parameters */
 
 /** \brief maximum number of files */
-#define  M           10
+#define M 10
 
 /** \brief minimum number of bytes each chunk must have */
-#define  MIN           11
+#define MIN 11
 
 /** \brief default maximum number of bytes each chunk has */
-#define  DB           2500
+#define DB 2500
 
 /** \brief default number of worker threads */
-#define  DN           2
+#define DN 2
 
 #endif /* PROBCONST_H_ */
