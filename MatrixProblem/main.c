@@ -215,7 +215,6 @@ static void *worker(void *wid)
       struct matrixData  *curMatrix = (struct matrixData *)malloc(sizeof(struct matrixData));
       int contin = getSingleMatrixData(id, curMatrix);
       if (contin == -1) {
-        signalWaitingConsumers(id);
         break;
       }
       double det = getDeterminant(curMatrix->order,curMatrix->matrix);

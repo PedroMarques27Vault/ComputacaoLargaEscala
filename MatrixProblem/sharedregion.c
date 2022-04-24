@@ -155,31 +155,6 @@ void putMatrixInFifo (struct matrixData matrix)
 }
 
 
-int signalWaitingConsumers(unsigned int consId)
-{                                                                        /* retrieved value */
-  int val = 1;
-  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)     {                              /* enter monitor */
-     { errno = statusWorker[consId];                                                            /* save error in errno */
-       perror ("error on entering monitor(CF)");
-       statusWorker[consId] = EXIT_FAILURE;
-       pthread_exit (&statusWorker[consId]);
-     }                                          /* internal data initialization */}
-
-
-  if (fCounter == totalFileCount){ 
-    val = 0;
-    pthread_cond_broadcast(&fifoEmpty);
-  }
-
-  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
-     { errno = statusWorker[consId];                                                             /* save error in errno */
-       perror ("error on exiting monitor(CF)");
-       statusWorker[consId] = EXIT_FAILURE;
-       pthread_exit (&statusWorker[consId]);
-     }
-
-  return val;
-}
 
 int getSingleMatrixData(unsigned int consId, struct matrixData *val)
 {
@@ -245,6 +220,23 @@ int getSingleMatrixData(unsigned int consId, struct matrixData *val)
 
 void putResults(unsigned int consId,double determinant,int fileIndex,int matrixNumber)
 {
-    (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant; 
+  if ((statusWorker[consId] = pthread_mutex_lock (&accessCR)) != 0)                                   /* enter monitor */
+     { errno = statusWorker[consId];                                                            /* save error in errno */
+       perror ("error on entering monitor(CF)");
+       statusWorker[consId] = EXIT_FAILURE;
+       pthread_exit (&statusWorker[consId]);
+     }     
+  (*((((struct matrixFile *)(files+fileIndex))->matrixDeterminants) + matrixNumber)) = determinant; 
+  
+  if (fCounter == totalFileCount){ 
+    pthread_cond_broadcast(&fifoEmpty);
+  }
+  
+  if ((statusWorker[consId] = pthread_mutex_unlock (&accessCR)) != 0)                                   /* exit monitor */
+  { errno = statusWorker[consId];                                                             /* save error in errno */
+    perror ("error on exiting monitor(CF)");
+    statusWorker[consId] = EXIT_FAILURE;
+    pthread_exit (&statusWorker[consId]);
+  }
 }
 
