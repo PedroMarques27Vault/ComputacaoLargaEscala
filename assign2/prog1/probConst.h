@@ -20,7 +20,7 @@
 #define MIN 11
 
 /** \brief default maximum number of bytes each chunk has */
-#define DB 2500
+#define DB 4060
 
 /** \brief indicates if all files have been processed */
 # define ALLFILESPROCESSED 0

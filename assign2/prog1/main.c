@@ -20,20 +20,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <math.h>
 #include <time.h>
 #include <stdbool.h>
 #include <string.h>
 #include <libgen.h>
+#include <mpi.h>
 
+#include <pthread.h>
+
+#include "sharedRegion.h"
 #include "textProcUtils.h"
 #include "probConst.h"
 
+/**
+ *  \brief Print command usage.
+ *
+ *  A message specifying how the program should be called is printed.
+ *
+ *  \param cmdName string with the name of the command
+ */
 static void printUsage(char *cmdName);
 
-/** \brief worker life cycle routine */
-static void *worker(void *id);
+/**
+ *  \brief Print results of the text processing.
+ *
+ *  Operation carried out by the dispatcher process.
+ */
+void printResults(struct fileData *filesData, int numFiles);
 
 /**
  *  \brief Main thread.
@@ -83,7 +97,7 @@ int main(int argc, char *argv[])
     int maxBytesPerChunk = DB;
 
     /* process command line arguments and set up variables */
-    int i;              /* counting variable */
+    int nFile, nProc;   /* counting variables */
     char *fileNames[M]; /* files to be processed (maximum of M) */
     int numFiles = 0;   /* number of files to process */
     int opt;            /* selected option */
@@ -133,154 +147,145 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
     }
 
-    // allocating memory for numFiles of file structs
+    /* allocating memory for numFiles of fileData structs */
     struct fileData *filesData = (struct fileData *)malloc(numFiles * sizeof(struct fileData));
+    int nProcesses = 0; /* number of processes that got chunks */
+    int previousCh = 0; /* last character read of the previous chunk */
 
-    for (int i = 0; i < numFiles; i++)
+    for (nFile = 0; nFile < numFiles; nFile++)
     {
-      (filesData + i)->fileName = fileNames[i];
-      FILE *fp = fopen(fileNames[i], "rb"); /* get the file pointer */
-      if (fp == NULL)
+      (filesData + nFile)->fileName = fileNames[nFile];
+      /* get the file pointer */
+      if (((filesData + nFile)->fp = fopen(fileNames[nFile], "rb")) == NULL)
       {
-        printf("Error: could not open file %s\n", fileNames[i]);
+        printf("Error: could not open file %s\n", fileNames[nFile]);
         exit(EXIT_FAILURE);
       }
 
-      
-      int fileProcessed = 0;
-      // while file is processing
-      while (!fileProcessed)
+      /* allocating memory for the chunk buffer */
+      /* TODO: usar apenas um chunk buffer talvez ou libertar o anterior dps... */
+      (filesData + nFile)->chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));
+
+      /* while file is processing */
+      while (!((filesData + nFile)->finished))
       {
-        int nProcesses = 0; // number of processes that got chunks
+        nProcesses = 0; // number of processes that got chunks
 
-        // Send a chunk of data to each worker process for processing
-        for (int nProc = 1; nProc < size; nProc++)
+        /* Send a chunk of data to each worker process for processing */
+        for (nProc = 1; nProc < size; nProc++)
         {
-          if (fileProcessed)
+          if ((filesData + nFile)->finished) {
+            fclose((filesData + nFile)->fp); /* close the file pointer */
             break;
+          }
 
+          previousCh = (filesData + nFile)->previousCh;
+
+          (filesData + nFile)->chunkSize = fread((filesData + nFile)->chunk, 1, maxBytesPerChunk - 7, (filesData + nFile)->fp);
+          /*
+            if the chunk read is smaller than the value expected
+            it means the current file has reached the end
+          */
+          if ((filesData + nFile)->chunkSize < maxBytesPerChunk - 7)
+            (filesData + nFile)->finished = true;
+          /*
+            - reads bytes from the file until it reads a full UTF8 encoded character
+            - adds the bytes read to the chunk
+            - updates the chunk size
+            - updates the last character of this chunk as the previous character
+          */
+          else
+            getChunkSizeAndLastChar(filesData + nFile);
+
+          if ((filesData + nFile)->previousCh == EOF) /* checks the last character was the EOF */
+            (filesData + nFile)->finished = true;
+
+          /*
+            send to the worker:
+            - a flag saying there work to do
+            - the chunk buffer
+            - the size of the chunk
+            - the character of the previous chunk
+          */
+          int workStatus = FILESINPROCESSING;
+          MPI_Send(&workStatus, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
+          MPI_Send((filesData + nFile)->chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, nProc, 0, MPI_COMM_WORLD);
+          MPI_Send(&(filesData + nFile)->chunkSize, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
+          MPI_Send(&previousCh, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
+          memset((filesData + nFile)->chunk, 0, maxBytesPerChunk * sizeof(unsigned char));
           nProcesses++;
-
-          fileProcessed = getChunk(file, buff, chunkSize);
-
-          /*Warn workers that the work is not over and give them the buffer*/
-          exitWork = FILESINPROCESSING;
-          MPI_Send(&exitWork, 1, MPI_UNSIGNED, size-1, 0, MPI_COMM_WORLD);
-          MPI_Send(buff, chunkSize, MPI_CHAR, size-1, 0, MPI_COMM_WORLD);
         }
 
         /*
-        Receive data From each process
-        Assemble the partial data received with the data that was stored in the final info
+          Receive the processing results from each worker process
         */
-        for (int nProc = 1; nProc < nProcesses + 1; nProc++)
-        { // for all processes
-          int rows;
-
+        for (nProc = 1; nProc < nProcesses + 1; nProc++)
+        {
           /*Receive number of words and number of rows*/
+          // TODO: change this to an array of results
+          int nWords = 0;
+          int nWordsBV = 0;
+          int nWordsEC = 0;
           MPI_Recv(&nWords, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          MPI_Recv(&nWordsBV, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          MPI_Recv(&nWordsEC, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-          /*Sum total number of words*/
-          finalInfo[i].nwords += nWords;
-
-          for (int col = 0; col < row + 1; col++)
-          { // col represents number of consonants (if row = 2, col will get the value of 0, 1 and 2)
-            finalInfo[i].data[row][col] += data[col];
-          }
+          /* update struct with new results */
+          (filesData + nFile)->nWords += nWords;
+          (filesData + nFile)->nWordsBV += nWordsBV;
+          (filesData + nFile)->nWordsEC += nWordsEC;
         }
       }
     }
-
-    //TODO: BROADCAST BETTER MAYBE....
+    // TODO: BROADCAST BETTER MAYBE....
     /* inform workers that all files are process and they can exit */
-    for (int nProc = 1 ; nProc < size ; nProc++)
-      MPI_Send (&ALLFILESPROCESSED, 1, MPI_UNSIGNED, nProc, 0, MPI_COMM_WORLD);
+    int workStatus = ALLFILESPROCESSED;
+    for (int nProc = 1; nProc < size; nProc++)
+      MPI_Send(&workStatus, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
 
     /* timer ends */
     clock_gettime(CLOCK_MONOTONIC_RAW, &finish); /* end of measurement */
 
     /* print the results of the text processing */
-    printResults();
+    printResults(filesData, numFiles);
 
     /* calculate the elapsed time */
     printf("\nElapsed time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
   }
   else
   {
-    char buff[1050];
-    struct PartialInfo partialInfo;
-    int exitWork;
+    int maxBytesPerChunk = DB;
+    /* allocating memory for the file data structure */
+    struct fileData* data = (struct fileData *) malloc(sizeof(struct fileData));
+    /* allocating memory for the chunk buffer */
+    data->chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));
+    int workStatus;
 
-    while (true) {
-
-        MPI_Recv (&exitWork, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
-        if (exitWork == NOMOREWORK) 
-            break;
-
-        MPI_Recv(buff,chunkSize,MPI_CHAR,0,0,MPI_COMM_WORLD,MPI_STATUS_IGNORE);    //receive buffer
-
-        int i = 0;
-        char ch;
-        int consonants = 0;
-        int inword = 0;
-        int numchars = 0;
-        
-        partialInfo.data = (int**)malloc(sizeof(int*));
-        partialInfo.nwords = 0;
-
-        processDataString(buff);
-
-        /* Send the processing results to the dispatcher */
-        MPI_Send (&partialInfo.nwords, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);    //send number of words
-
-        free(partialInfo.data);
+    while (true)
+    {
+      MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      if (workStatus == ALLFILESPROCESSED)
+        break;
+      
+      MPI_Recv(data->chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // receive buffer
+      MPI_Recv(&data->chunkSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // receive buffer
+      MPI_Recv(&data->previousCh, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // receive buffer
+      
+      /* perform text processing on the chunk */
+      processChunk(data);
+      /* Send the processing results to the dispatcher */
+      MPI_Send(&data->nWords, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(&data->nWordsBV, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(&data->nWordsEC, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      /* reset structures */
+      data->nWords = 0;
+      data->nWordsBV = 0;
+      data->nWordsEC = 0;
     }
   }
 
-  MPI_Finalize ();
+  MPI_Finalize();
   exit(EXIT_SUCCESS);
-}
-
-/**
- *  \brief Function worker.
- *
- *  Its role is to perform text processing on chunks of data, after obtaining
- *  the chunk from the shared region, and then save the processing results.
- *
- *  \param wid pointer to application defined worker identification
- */
-static void *worker(void *wid)
-{
-  unsigned int id = *((unsigned int *)wid); /* worker id */
-
-  /* structure that has file's chunk to process and the results of that processing */
-  struct filePartialData *partialData = (struct filePartialData *)malloc(sizeof(struct filePartialData));
-  partialData->chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));
-
-  while (true) /* work until no more data is available */
-  {
-    getData(id, partialData); /* retrieve data from the shared region to process */
-
-    if (partialData->finished) /* no more data available */
-      break;
-
-    processChunk(partialData); /* perform text processing on the chunk */
-
-    savePartialResults(id, partialData); /* save results on the shared region */
-
-    /* reset structures */
-    partialData->finished = true;
-    partialData->nWords = 0;
-    partialData->nWordsBV = 0;
-    partialData->nWordsEC = 0;
-    memset(partialData->chunk, 0, maxBytesPerChunk * sizeof(unsigned char));
-  }
-
-  free(partialData); /* deallocate the structure memory */
-
-  statusWorker[id] = EXIT_SUCCESS;
-  pthread_exit(&statusWorker[id]);
-  return 0;
 }
 
 /**
@@ -299,4 +304,20 @@ static void printUsage(char *cmdName)
                   "  -n      --- number of threads\n"
                   "  -m      --- maximum number of bytes per chunk\n",
           cmdName);
+}
+
+/**
+ *  \brief Print results of the text processing.
+ *
+ *  Operation carried out by the dispatcher process.
+ */
+void printResults(struct fileData *filesData, int numFiles)
+{
+  for (int i = 0; i < numFiles; i++)
+  {
+    printf("\nFile name: %s\n", (filesData + i)->fileName);
+    printf("Total number of words = %d\n", (filesData + i)->nWords);
+    printf("N. of words beginning with a vowel = %d\n", (filesData + i)->nWordsBV);
+    printf("N. of words ending with a consonant = %d\n", (filesData + i)->nWordsEC);
+  }
 }

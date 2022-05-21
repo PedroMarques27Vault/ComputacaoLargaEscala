@@ -39,18 +39,21 @@
 #include <stdio.h>
 
 /**
- *  \brief Structure with the filename and file pointer to process.
- *
- *   It also stores the final results of the file processing.
+ *  \brief Structure with the filename and the results of the file processing.
+ *   flag that indicates when file has no more chunks to be processed
+ * 
  */
 struct fileData
 {
   char *fileName;
-  FILE *fp;
+  FILE* fp;
+  bool finished;
+  int previousCh;
+  unsigned char* chunk;
+  int chunkSize;
   int nWords;
   int nWordsBV;
   int nWordsEC;
-  int previousCh;
 };
 
 /**

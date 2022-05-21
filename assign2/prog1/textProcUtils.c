@@ -160,7 +160,7 @@ int handleSpecialChars(int ch)
  *  \param charUTF8Bytes array that will be filled with the first element
  *  the UTF8 character obtained and the second element the number of bytes read
  */
-void extractAChar(unsigned char *buffer, int index, int charUTF8Bytes[2])
+void extractAChar(unsigned char *buffer, int index, int *charUTF8Bytes)
 {
   int ch = buffer[index++];
 
@@ -168,7 +168,7 @@ void extractAChar(unsigned char *buffer, int index, int charUTF8Bytes[2])
   if (ch == EOF || !(ch & 0x80))
   {
     charUTF8Bytes[0] = ch;
-    charUTF8Bytes[1] = 1;
+    charUTF8Bytes[1] =  1;
     return;
   }
 
@@ -203,17 +203,17 @@ void extractAChar(unsigned char *buffer, int index, int charUTF8Bytes[2])
  *
  *  Operation executed by workers.
  *
- *  \param partialData structure that contains the data needed to process
+ *  \param data structure that contains the data needed to process
  *  and will be filled with the results obtained
  */
-void processChunk(struct filePartialData *partialData)
+void processChunk(struct fileData *data)
 {
   // final results variables
   int nWords = 0;
   int nWordsBV = 0;
   int nWordsEC = 0;
 
-  int previousCh = partialData->previousCh;
+  int previousCh = data->previousCh;
 
   // current read character
   int ch = 0;
@@ -223,13 +223,13 @@ void processChunk(struct filePartialData *partialData)
   inWord = (isMergeChar(previousCh) || isAlpha(previousCh) ||
             isNumeric(previousCh) || isUnderscore(previousCh));
 
-  int charUTF8Bytes[2];
+  int* charUTF8Bytes = (int *) malloc(2 * sizeof(int));
   int numChars = 0;
 
-  while (numChars <= partialData->chunkSize)
+  while (numChars <= data->chunkSize)
   {
     /* extract a UTF8 encoded character from the buffer */
-    extractAChar(partialData->chunk, numChars, charUTF8Bytes);
+    extractAChar(data->chunk, numChars, charUTF8Bytes);
 
     ch = charUTF8Bytes[0];
 
@@ -284,9 +284,9 @@ void processChunk(struct filePartialData *partialData)
   }
 
   /* update the structure with the results */
-  partialData->nWords = nWords;
-  partialData->nWordsBV = nWordsBV;
-  partialData->nWordsEC = nWordsEC;
+  data->nWords = nWords;
+  data->nWordsBV = nWordsBV;
+  data->nWordsEC = nWordsEC;
 }
 
 /**
@@ -301,11 +301,11 @@ void processChunk(struct filePartialData *partialData)
  *  be updated with the last character of the given chunk.
  *  \param partialData filePartialData structure that contains the chunk and chunk size.
  */
-void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *partialData)
+void getChunkSizeAndLastChar(struct fileData *data)
 {
   /* read the next unsigned char from the file and add it to partial data */
   int ch = fgetc(data->fp);
-  (partialData->chunk)[partialData->chunkSize++] = ch;
+  (data->chunk)[data->chunkSize++] = ch;
 
   /*
     while in middle of multi byte sequence read a unsigned char from the file
@@ -315,14 +315,14 @@ void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *part
   while ((ch & 0xC0) == 0x80)
   {
     ch = fgetc(data->fp);
-    (partialData->chunk)[partialData->chunkSize++] = ch;
+    (data->chunk)[data->chunkSize++] = ch;
   }
 
   /* if its the EOF or not a multi byte sequence */
   if (ch == EOF || !(ch & 0x80))
   {
     data->previousCh = ch;
-    (partialData->chunk)[partialData->chunkSize++] = ch;
+    (data->chunk)[data->chunkSize++] = ch;
     return;
   }
 
@@ -335,12 +335,12 @@ void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *part
   while (ch & (0x80 >> seq_len))
   {
     c = fgetc(data->fp);
-    (partialData->chunk)[partialData->chunkSize++] = c;
+    (data->chunk)[data->chunkSize++] = c;
     /*
       shift to add 6 zeros on the right of the final char
       and use the 6 most representative bits of the read char
     */
-    fn = (fn << 6) | ((partialData->chunk)[partialData->chunkSize++] & 0x3F);
+    fn = (fn << 6) | ((data->chunk)[data->chunkSize++] & 0x3F);
     seq_len++;
   }
   /* add the initial bits after the sequence length identifier bits */

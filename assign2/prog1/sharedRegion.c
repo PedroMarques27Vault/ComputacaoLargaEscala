@@ -195,19 +195,3 @@ void savePartialResults(unsigned int workerId, struct filePartialData *partialDa
     pthread_exit(&statusWorker[workerId]);
   }
 }
-
-/**
- *  \brief Print results of the text processing.
- *
- *  Operation carried out by the main thread.
- */
-void printResults()
-{
-  for (int i = 0; i < numFiles; i++)
-  {
-    printf("\nFile name: %s\n", (filesData + i)->fileName);
-    printf("Total number of words = %d\n", (filesData + i)->nWords);
-    printf("N. of words beginning with a vowel = %d\n", (filesData + i)->nWordsBV);
-    printf("N. of words ending with a consonant = %d\n", (filesData + i)->nWordsEC);
-  }
-}

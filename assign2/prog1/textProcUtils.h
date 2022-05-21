@@ -9,11 +9,13 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "sharedRegion.h"
 
 #ifndef TEXT_PROC_Funct_H
 #define TEXT_PROC_Funct_H
+
 
 /**
  *  \brief Checks if the given character is a alpha character.
@@ -114,7 +116,7 @@ int handleSpecialChars(int ch);
  *  \param charUTF8Bytes array that will be filled with the first element
  *  the UTF8 character obtained and the second element the number of bytes read
  */
-void extractAChar(unsigned char *buffer, int index, int charUTF8Bytes[2]);
+void extractAChar(unsigned char *buffer, int index, int* charUTF8Bytes);
 
 /**
  *  \brief Performs text processing of a chunk.
@@ -129,7 +131,7 @@ void extractAChar(unsigned char *buffer, int index, int charUTF8Bytes[2]);
  *  \param partialData structure that contains the data needed to process
  *  and will be filled with the results obtained
  */
-void processChunk(struct filePartialData *partialData);
+void processChunk(struct fileData *partialData);
 
 /**
  *  \brief Reads bytes from the file until it reads a full UTF8 encoded character.
@@ -143,6 +145,6 @@ void processChunk(struct filePartialData *partialData);
  *  be updated with the last character of the given chunk.
  *  \param partialData filePartialData structure that contains the chunk and chunk size.
  */
-void getChunkSizeAndLastChar(struct fileData *data, struct filePartialData *partialData);
+void getChunkSizeAndLastChar(struct fileData* data);
 
 #endif /* TEXT_PROC_Funct_H */
