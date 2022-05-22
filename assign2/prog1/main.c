@@ -155,6 +155,7 @@ int main(int argc, char *argv[])
     for (nFile = 0; nFile < numFiles; nFile++)
     {
       (filesData + nFile)->fileName = fileNames[nFile];
+      (filesData + nFile)->finished = false;
       /* get the file pointer */
       if (((filesData + nFile)->fp = fopen(fileNames[nFile], "rb")) == NULL)
       {
@@ -186,7 +187,7 @@ int main(int argc, char *argv[])
             if the chunk read is smaller than the value expected
             it means the current file has reached the end
           */
-          if ((filesData + nFile)->chunkSize < maxBytesPerChunk - 7)
+          if ((filesData + nFile)->chunkSize < (maxBytesPerChunk - 7))
             (filesData + nFile)->finished = true;
           /*
             - reads bytes from the file until it reads a full UTF8 encoded character
@@ -196,6 +197,9 @@ int main(int argc, char *argv[])
           */
           else
             getChunkSizeAndLastChar(filesData + nFile);
+
+          if (!(filesData + nFile)->chunkSize)
+            break;
 
           if ((filesData + nFile)->previousCh == EOF) /* checks the last character was the EOF */
             (filesData + nFile)->finished = true;
@@ -267,9 +271,9 @@ int main(int argc, char *argv[])
       if (workStatus == ALLFILESPROCESSED)
         break;
       
-      MPI_Recv(data->chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // receive buffer
-      MPI_Recv(&data->chunkSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // receive buffer
-      MPI_Recv(&data->previousCh, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // receive buffer
+      MPI_Recv(data->chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&data->chunkSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&data->previousCh, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       
       /* perform text processing on the chunk */
       processChunk(data);
