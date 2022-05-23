@@ -35,19 +35,12 @@
 #include <libgen.h>
 #include <libgen.h>
 #include <string.h>
+#include <mpi.h>
 
 
-/** \brief shared region initialization */
-extern void initialization(int _totalFileCount, int _K);
 
 /** \brief prints explanation of how to run code */
 static void printUsage(char *cmdName);
-
-/** \brief worker threads return status array */
-int *statusWorker;
-
-/** \brief worker life cycle routine */
-static void *worker(void *id);
 
 
 /**
@@ -81,199 +74,165 @@ int main(int argc, char *argv[])
  
   char *filenames[10];                                                                     /* array of file's names  */
   int fnip = 0;                                                                        /* filename insertion pointer */
-  int opt;                                                                                        /* selected option */
+  int opt;  
+  
+                                                                                        /* selected option */
+  int rank, size;
 
+  // MPI
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  // argument handling
-  do  
+  /* This program requires at least 2 processes */
+  if (size < 2)
   {
-    switch ((opt = getopt(argc, argv, "f:n:k:")))
-    {
-    case 'f': /* file name */
-      if (optarg[0] == '-')
-      {
-        fprintf(stderr, "%s: file name is missing\n", basename(argv[0]));
-        printUsage(basename(argv[0]));
-        return EXIT_FAILURE;
-      }
-      if (fnip>=10) /* at most 10 files */                                    
-      {
-        fprintf(stderr, "%s: Too many files to unpack. At Most 10\n", basename(argv[0]));
-        printUsage(basename(argv[0]));
-        return EXIT_FAILURE;
-      }
-
-      filenames[fnip++] = optarg;
-      break;
-    case 'n': /* numeric argument */
-      if (atoi(optarg) < 1)
-      {
-        fprintf(stderr, "%s: number of threads must be greater or equal than 1\n", basename(argv[0]));
-        printUsage(basename(argv[0]));
-        return EXIT_FAILURE;
-      }
-      N = (int)atoi(optarg);
-      break;
-    case 'k': /* numeric argument */
-      if (atoi(optarg) < 1)
-      {
-        fprintf(stderr, "%s: size of the queue must be greater or equal than 1\n", basename(argv[0]));
-        printUsage(basename(argv[0]));
-        return EXIT_FAILURE;
-      }
-      K = (int)atoi(optarg);
-      break;
-    case 'h': /* help mode */
-      printUsage(basename(argv[0]));
-      return EXIT_SUCCESS;
-    case '?': /* invalid option */
-      fprintf(stderr, "%s: invalid option\n", basename(argv[0]));
-      printUsage(basename(argv[0]));
-      return EXIT_FAILURE;
-    case -1:
-      break;
-    }
-  } while (opt != -1);
-
-  if (argc == 1)
-  {
-    fprintf(stderr, "%s: invalid format\n", basename(argv[0]));
-    printUsage(basename(argv[0]));
+    fprintf(stderr, "Requires at least two processes.\n");
+    MPI_Finalize();
     return EXIT_FAILURE;
   }
-
-  pthread_t tIdCons[N];                                                        /* consumers internal thread id array */
-  unsigned int cons[N];                                             /* consumers application defined thread id array */
-  int *status_p;                                                                      /* pointer to execution status */                            
-  
-  struct timespec start, finish;                                                                      /* time limits */
-
-  clock_gettime (CLOCK_MONOTONIC_RAW, &start);                                          /* begin of time measurement */
-  
-  statusWorker = malloc(sizeof(int) * N);                       /* memory allocation of worker's return status array */
-
-  for (int i = 0; i < N; i++)                                                          /* incremental id attribution */
-    cons[i] = i;
-
-
-  initialization(fnip,K);                                                     /* initialization of the shared region */
-
-  for (int i = 0; i < N; i++)                                                             /* worker htreads creation */
-    if (pthread_create (&tIdCons[i], NULL, worker, &cons[i]) != 0)                                  /* thread worker */
-       { perror ("error on creating thread consumer");
-         exit (EXIT_FAILURE);
-       }
-
-  
-  for (int fCk = 0;fCk<fnip;fCk++){                                          /* process each file in filenames array */
-
-    FILE *fp = fopen(filenames[fCk], "r");
-
-    if (fp == NULL)
+  if (rank == 0){
+    int WORKSTATUS = 1;
+    // argument handling
+    do  
     {
-        printf("Error: could not open file %s", filenames[fCk]);
-        return 1;
+      switch ((opt = getopt(argc, argv, "f:k:")))
+      {
+      case 'f': /* file name */
+        if (optarg[0] == '-')
+        {
+          fprintf(stderr, "%s: file name is missing\n", basename(argv[0]));
+          printUsage(basename(argv[0]));
+          return EXIT_FAILURE;
+        }
+        if (fnip>=10) /* at most 10 files */                                    
+        {
+          fprintf(stderr, "%s: Too many files to unpack. At Most 10\n", basename(argv[0]));
+          printUsage(basename(argv[0]));
+          return EXIT_FAILURE;
+        }
+
+        filenames[fnip++] = optarg;
+        break;
+      case 'k': /* numeric argument */
+        if (atoi(optarg) < 1)
+        {
+          fprintf(stderr, "%s: size of the queue must be greater or equal than 1\n", basename(argv[0]));
+          printUsage(basename(argv[0]));
+          return EXIT_FAILURE;
+        }
+        K = (int)atoi(optarg);
+        break;
+      case 'h': /* help mode */
+        printUsage(basename(argv[0]));
+        return EXIT_SUCCESS;
+      case '?': /* invalid option */
+        fprintf(stderr, "%s: invalid option\n", basename(argv[0]));
+        printUsage(basename(argv[0]));
+        return EXIT_FAILURE;
+      case -1:
+        break;
+      }
+    } while (opt != -1);
+
+    if (argc == 1)
+    {
+      fprintf(stderr, "%s: invalid format\n", basename(argv[0]));
+      printUsage(basename(argv[0]));
+      return EXIT_FAILURE;
     }
 
-    int numMatrix;
-    fread(&numMatrix, 4, 1, fp);                                               /* get number of matrices in the file */
+    matrices = malloc(sizeof(struct matrixData) * K);                              /* initialize FIFO/matrices Queue  */
+    files = (struct matrixFile *)malloc(fnip * sizeof(struct matrixFile));       /* initialize files array  */
+                                              
+
     
-    int order;
-    fread(&order, 4, 1, fp);                                                /* get order of the matrices in the file */
-    
-    
-    struct matrixFile curFile;                                         /* initialize structure with file information */
-    curFile.filename = filenames[fCk];
-    curFile.processedMatrixCounter = 0;
-    curFile.order = order;
-    curFile.nMatrix = numMatrix;
 
+    for (int fCk = 0;fCk<fnip;fCk++){                                          /* process each file in filenames array */
 
-    putFileData (curFile);                    /* insert the current file's info into the shared region's files array */
+      FILE *fp = fopen(filenames[fCk], "r");
 
+      if (fp == NULL)
+      {
+          printf("Error: could not open file %s", filenames[fCk]);
+          return 1;
+      }
 
-    int incMCount = 0;                                                                 /* incremental matrix counter */
-    while(incMCount!=numMatrix){                                     /* iterate over each matrix in the current file */
-   
-      struct matrixData  curMatrix;                               /* initialize structure with current matrix's info */
-      curMatrix.fileIndex = fCk;
-      curMatrix.matrixNumber = incMCount;
-      curMatrix.order = order;
-      curMatrix.determinant = 0;
+      int numMatrix;
+      fread(&numMatrix, 4, 1, fp);                                               /* get number of matrices in the file */
+      
+      int order;
+      fread(&order, 4, 1, fp);                                                /* get order of the matrices in the file */
+      
 
-      curMatrix.matrix = (double *)malloc(order * order * sizeof(double));        /* memory allocation of the matrix */
-  
-      fread(curMatrix.matrix, 8, order*order, fp);                                     /* read full matrix from file */
-     
-      putMatrixInFifo (curMatrix);                        /* add matrix to the shared region's FIFO processing queue */
+      int incMCount = 0;         
 
-      incMCount++;
+      (files+fCk)->filename = file.filename;
+      (files+fCk)->order = order;
+      (files+fCk)->nMatrix = numMatrix;
+      (files+fCk)->matrixDeterminants = (double *)malloc(numMatrix * sizeof(double));
+      int nProcesses = 0;
+      
+      int rest = numMatrix%size;
+      int iterations = (numMatrix-rest)/size;
+
+      for (int iter = 0; iter < iterations + 1; iter++){
+        int nMatrixToRead = size;
+        if (iter == iterations) nMatrixToRead = rest;
+        for (int nProc = 1; nProc<nMatrixToRead+1; nProc++){
+            double *matrix = (double *)malloc(order * order * sizeof(double));        /* memory allocation of the matrix */
+            fread(matrix, 8, order*order, fp);                                     /* read full matrix from file */
+            MPI_Send(WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
+            MPI_Send(order, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);        /* Send order*/
+            MPI_Send(incMCount, 1, MPI_UNSIGNED_INT, nProc, 0, MPI_COMM_WORLD);/* Send matrix index*/
+            MPI_Send(matrix, order*order, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD);
+        }
+
+        for (int nProc = 1; nProc<nMatrixToRead+1; nProc++){
+            int curMatrixNumber;
+            double determinant;
+            MPI_Recv(&curMatrixNumber, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&determinant, 1, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            /* update struct with new results */
+            ((filesData + fCk)->matrixDeterminants+curMatrixNumber) = determinant;
+        }
+      }
     }
-    
-  
-  }
-  
-  /* waiting for the termination of the intervening worker threads */
-  for (int i = 0; i < N; i++)
-  { if (pthread_join (tIdCons[i], (void *) &status_p) != 0)                                       
-       { perror ("error on waiting for thread customer");
-         exit (EXIT_FAILURE);
-       }
-    printf ("thread consumer, with id %u, has terminated: ", i);
-    printf ("its status was %d\n", *status_p);
-  }
-
-
-  clock_gettime (CLOCK_MONOTONIC_RAW, &finish);   
-  
-  for (int g=0; g<fnip; g++) {                                                     /* printing results for each file */
-    struct matrixFile *file = getFileData();                                     /* retrieve file from shared region */
-    
-    printf("\nMatrix File  %s\n", file->filename);
-    printf("Number of Matrices  %d\n", file->nMatrix);
-    printf("Order of the matrices  %d\n", file->order);
-
-    for (int o =0;o<file->nMatrix; o++){
-      printf("\tMatrix %d Result: Determinant = %.3e \n", o+1,file->matrixDeterminants[o]);
+    WORKSTATUS = 0;
+    for (int nProc = 1; nProc<size+1; nProc++){
+          MPI_Send(WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
     }
-        
+  
+  }else{
+    
+    while(true){
+      int curWorkStatus;
+      MPI_Recv(&curWorkStatus, maxBytesPerChunk, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      if (curWorkStatus ==0) break;
+
+      int order, matrixIndex;
+      double *matrix = (double *)malloc(order * order * sizeof(double)); 
+      MPI_Recv(&order, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&matrixIndex, 1, MPI_UNSIGNED_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(matrix, order*order, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    
+
+      
+      double det = getDeterminant(curMatrix->order,curMatrix->matrix);                     /* calculate determinant  */
+
+      MPI_Send(matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(determinantV, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                                                                     /* free allocated memory */
+    }
   }
-                                             /* end of measurement */
-  printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
+
+  
 
   exit (EXIT_SUCCESS);
 
 }
-/**
- *  \brief Function worker.
- *  Worker's life cycle
- * 
- *  Its role is to process a matrix and calculate its determinant.
- *
- *  \param wid pointer to application defined worker identification
- */
 
-static void *worker(void *wid)
-{
-  unsigned int id = *((unsigned int *)wid); /* worker id */
-
-  while(true){
-      struct matrixData  *curMatrix = (struct matrixData *)malloc(sizeof(struct matrixData));   /* matrix to be processed
-                                                                                                  memory alocation   */
-      int contin = getSingleMatrixData(id, curMatrix);                          /* retrive matrix from shared region */
-      if (contin == -1) {                                        /* if all files have been processed, end life cycle */
-        break;
-      }
-      double det = getDeterminant(curMatrix->order,curMatrix->matrix);                     /* calculate determinant  */
-
-      putResults(id,det, curMatrix->fileIndex, curMatrix->matrixNumber);      /* insert results in the shared region */
-    
-      free(curMatrix);                                                                      /* free allocated memory */
-  }
- 
-  statusWorker[id] = EXIT_SUCCESS;
-  pthread_exit (&statusWorker[id]);
-}
 
 /**
  *  \brief Print command usage.
