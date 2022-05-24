@@ -16,7 +16,5 @@
 /** \brief maximum number of files */
 #define  M           12
 
-/** \brief default number of worker threads */
-#define  DN          4
 
 #endif /* PROBCONST_H_ */
