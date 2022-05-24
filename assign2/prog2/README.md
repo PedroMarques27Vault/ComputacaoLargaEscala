@@ -27,3 +27,6 @@ Arguments:
 Example:
 
 	./prog2 -f shortMatrix/mat128_64.bin -f shortMatrix/mat128_32.bin -k 8 -n 4
+	
+	
+mpicc -Wall -O3 -o prog2 main.c matrixutils.c -lm

@@ -23,7 +23,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <math.h>
 #include <time.h>
 #include <stdbool.h>
@@ -68,8 +67,6 @@ static void printUsage(char *cmdName);
 
 int main(int argc, char *argv[])
 {
-  int N = DN;                                                                             /* number of worker threads */
-  int K = M;                                                                  /*Size of FIFO Queue in Shared Region */
 
  
   char *filenames[10];                                                                     /* array of file's names  */
@@ -96,7 +93,7 @@ int main(int argc, char *argv[])
     // argument handling
     do  
     {
-      switch ((opt = getopt(argc, argv, "f:k:")))
+      switch ((opt = getopt(argc, argv, "f:")))
       {
       case 'f': /* file name */
         if (optarg[0] == '-')
@@ -114,15 +111,7 @@ int main(int argc, char *argv[])
 
         filenames[fnip++] = optarg;
         break;
-      case 'k': /* numeric argument */
-        if (atoi(optarg) < 1)
-        {
-          fprintf(stderr, "%s: size of the queue must be greater or equal than 1\n", basename(argv[0]));
-          printUsage(basename(argv[0]));
-          return EXIT_FAILURE;
-        }
-        K = (int)atoi(optarg);
-        break;
+     
       case 'h': /* help mode */
         printUsage(basename(argv[0]));
         return EXIT_SUCCESS;
@@ -140,13 +129,9 @@ int main(int argc, char *argv[])
       fprintf(stderr, "%s: invalid format\n", basename(argv[0]));
       printUsage(basename(argv[0]));
       return EXIT_FAILURE;
-    }
-
-    matrices = malloc(sizeof(struct matrixData) * K);                              /* initialize FIFO/matrices Queue  */
-    files = (struct matrixFile *)malloc(fnip * sizeof(struct matrixFile));       /* initialize files array  */
+    }     
+    struct matrixFile * files = (struct matrixFile *)malloc(fnip * sizeof(struct matrixFile));       /* initialize files array  */
                                               
-
-    
 
     for (int fCk = 0;fCk<fnip;fCk++){                                          /* process each file in filenames array */
 
@@ -164,65 +149,77 @@ int main(int argc, char *argv[])
       int order;
       fread(&order, 4, 1, fp);                                                /* get order of the matrices in the file */
       
+       
 
-      int incMCount = 0;         
-
-      (files+fCk)->filename = file.filename;
+      (files+fCk)->filename = filenames[fCk];
       (files+fCk)->order = order;
       (files+fCk)->nMatrix = numMatrix;
       (files+fCk)->matrixDeterminants = (double *)malloc(numMatrix * sizeof(double));
-      int nProcesses = 0;
+
       
       int rest = numMatrix%size;
       int iterations = (numMatrix-rest)/size;
 
+      int incMCount = 0;  
       for (int iter = 0; iter < iterations + 1; iter++){
         int nMatrixToRead = size;
         if (iter == iterations) nMatrixToRead = rest;
-        for (int nProc = 1; nProc<nMatrixToRead+1; nProc++){
+        printf("Rank 0 New Itertation Started \n");
+        for (int nProc = 1; nProc<nMatrixToRead; nProc++){
             double *matrix = (double *)malloc(order * order * sizeof(double));        /* memory allocation of the matrix */
             fread(matrix, 8, order*order, fp);                                     /* read full matrix from file */
-            MPI_Send(WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
-            MPI_Send(order, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);        /* Send order*/
-            MPI_Send(incMCount, 1, MPI_UNSIGNED_INT, nProc, 0, MPI_COMM_WORLD);/* Send matrix index*/
+            
+            MPI_Send(&WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
+            MPI_Send(&order, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);        /* Send order*/
+            MPI_Send(&incMCount, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);/* Send matrix index*/
             MPI_Send(matrix, order*order, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD);
+            incMCount++;
         }
+        printf("Rank 0 Sent to all processes\n");
+        printf("Rank 0  Waiting to receive\n");
 
-        for (int nProc = 1; nProc<nMatrixToRead+1; nProc++){
+        for (int nProc = 1; nProc<nMatrixToRead; nProc++){
             int curMatrixNumber;
             double determinant;
             MPI_Recv(&curMatrixNumber, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             MPI_Recv(&determinant, 1, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             /* update struct with new results */
-            ((filesData + fCk)->matrixDeterminants+curMatrixNumber) = determinant;
-        }
+            (*((((struct matrixFile *)(files+fCk))->matrixDeterminants) + curMatrixNumber)) = determinant;        /* add determinant in the file's determinants array */
+           }
+        printf("Rank 0 Received\n");
       }
     }
+    printf("#TERMINATING");
     WORKSTATUS = 0;
-    for (int nProc = 1; nProc<size+1; nProc++){
-          MPI_Send(WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
+    for (int nProc = 1; nProc<size; nProc++){
+          MPI_Send(&WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
     }
   
   }else{
     
     while(true){
+      printf("Rank %d New loop started\n",rank);
       int curWorkStatus;
-      MPI_Recv(&curWorkStatus, maxBytesPerChunk, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&curWorkStatus, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       if (curWorkStatus ==0) break;
 
+      printf("Received worker status\n");
       int order, matrixIndex;
-      double *matrix = (double *)malloc(order * order * sizeof(double)); 
       MPI_Recv(&order, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      MPI_Recv(&matrixIndex, 1, MPI_UNSIGNED_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      double *matrix = (double *)malloc(order * order * sizeof(double)); 
+      MPI_Recv(&matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       MPI_Recv(matrix, order*order, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     
 
-      
-      double det = getDeterminant(curMatrix->order,curMatrix->matrix);                     /* calculate determinant  */
+      printf("Rank %d - %d %d - Retrieved\n", rank, order, matrixIndex);
+      double det = getDeterminant(order,matrix);                     /* calculate determinant  */
+      free(matrix);
+      MPI_Send(&matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+      MPI_Send(&det, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 
-      MPI_Send(matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-      MPI_Send(determinantV, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+      printf("Rank %d - %d %f - Sent\n", rank, matrixIndex, det);
+      
                                                                      /* free allocated memory */
     }
   }

@@ -29,20 +29,4 @@ struct matrixFile
   unsigned int nMatrix;                                                         /** total number of matrices in file */
 };
 
-
-/** \brief retrive single matrix structure from queue */
-extern int getSingleMatrixData(unsigned int consId, struct matrixData *val);
-
-/** \brief insert file information */
-extern void putFileData (struct matrixFile matrix);
-
-/** \brief retrive one matrixFile object from files array */
-extern struct matrixFile * getFileData ();
-
-/** \brief insert matrix in FIFO Queue */
-extern void putMatrixInFifo (struct matrixData matrix);
-
-/** \brief insert results in file's determinant array */
-extern void putResults(unsigned int consId,double determinant,int fileIndex,int matrixNumber);
-
 #endif
