@@ -23,9 +23,9 @@
 #define DB 4060
 
 /** \brief indicates if all files have been processed */
-# define ALLFILESPROCESSED 0
+# define ALL_FILES_PROCESSED 0
 
 /** \brief indicates there are still files to be processed */
-# define FILESINPROCESSING 1
+# define FILES_IN_PROCESSING 1
 
 #endif /* PROBCONST_H_ */

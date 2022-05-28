@@ -72,6 +72,10 @@ void printResults(struct fileData *filesData, int numFiles);
 int main(int argc, char *argv[])
 {
   int rank, size;
+  int workStatus; /* indicates if there is more work to be done or not */
+  /** \brief maximum number of bytes per chunk */
+  int maxBytesPerChunk = DB; /* default value is used if not in args */
+  int i; /* counting variable */
 
   // MPI
   MPI_Init(&argc, &argv);
@@ -93,11 +97,8 @@ int main(int argc, char *argv[])
     /* timer starts */
     clock_gettime(CLOCK_MONOTONIC_RAW, &start); /* begin of measurement */
 
-    /** \brief maximum number of bytes per chunk */
-    int maxBytesPerChunk = DB;
-
     /* process command line arguments and set up variables */
-    int nFile, nProc;   /* counting variables */
+    int nFile;          /* counting variable */
     char *fileNames[M]; /* files to be processed (maximum of M) */
     int numFiles = 0;   /* number of files to process */
     int opt;            /* selected option */
@@ -147,10 +148,17 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
     }
 
-    /* allocating memory for numFiles of fileData structs */
-    struct fileData *filesData = (struct fileData *)malloc(numFiles * sizeof(struct fileData));
-    int nProcesses = 0; /* number of processes that got chunks */
-    int previousCh = 0; /* last character read of the previous chunk */
+
+    /* Tell each worker the maximum number of bytes each chunk will have so they can initialize the buffer */
+    MPI_Bcast(&maxBytesPerChunk, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    struct fileData *filesData = (struct fileData *)malloc(numFiles * sizeof(struct fileData)); /* allocating memory for numFiles of fileData structs */
+    int nWorkers = 0;                                                                           /* number of worker processes that got chunks */
+    int previousCh = 0;                                                                         /* last character read of the previous chunk */
+    int nWords = 0, nWordsBV = 0, nWordsEC = 0;                                                 /* results of the processing received from the workers */
+    workStatus = FILES_IN_PROCESSING;                                                           /* work needs to be done */
+    unsigned char * chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));  /* allocating memory for the chunk buffer */
+    memset(chunk, 0, maxBytesPerChunk * sizeof(unsigned char));
 
     for (nFile = 0; nFile < numFiles; nFile++)
     {
@@ -163,76 +171,45 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
       }
 
-      /* allocating memory for the chunk buffer */
-      /* TODO: usar apenas um chunk buffer talvez ou libertar o anterior dps... */
-      (filesData + nFile)->chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));
-
       /* while file is processing */
       while (!((filesData + nFile)->finished))
       {
-        nProcesses = 0; // number of processes that got chunks
-
         /* Send a chunk of data to each worker process for processing */
-        for (nProc = 1; nProc < size; nProc++)
+        for (nWorkers = 1; nWorkers < size; nWorkers++)
         {
-          if ((filesData + nFile)->finished) {
+          if ((filesData + nFile)->finished)
+          {
             fclose((filesData + nFile)->fp); /* close the file pointer */
             break;
           }
 
           previousCh = (filesData + nFile)->previousCh;
-
-          (filesData + nFile)->chunkSize = fread((filesData + nFile)->chunk, 1, maxBytesPerChunk - 7, (filesData + nFile)->fp);
-          /*
-            if the chunk read is smaller than the value expected
-            it means the current file has reached the end
-          */
-          if ((filesData + nFile)->chunkSize < (maxBytesPerChunk - 7))
+          (filesData + nFile)->chunkSize = fread(chunk, 1, maxBytesPerChunk - 7, (filesData + nFile)->fp);
+          
+          /* if the chunk read is smaller than the value expected it means the current file has reached the end */
+          if ((filesData + nFile)->chunkSize < (maxBytesPerChunk - 7)) 
             (filesData + nFile)->finished = true;
-          /*
-            - reads bytes from the file until it reads a full UTF8 encoded character
-            - adds the bytes read to the chunk
-            - updates the chunk size
-            - updates the last character of this chunk as the previous character
-          */
           else
-            getChunkSizeAndLastChar(filesData + nFile);
-
-          if (!(filesData + nFile)->chunkSize)
-            break;
+            getChunkSizeAndLastChar(chunk, filesData + nFile);
 
           if ((filesData + nFile)->previousCh == EOF) /* checks the last character was the EOF */
             (filesData + nFile)->finished = true;
 
-          /*
-            send to the worker:
-            - a flag saying there work to do
-            - the chunk buffer
-            - the size of the chunk
-            - the character of the previous chunk
-          */
-          int workStatus = FILESINPROCESSING;
-          MPI_Send(&workStatus, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
-          MPI_Send((filesData + nFile)->chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, nProc, 0, MPI_COMM_WORLD);
-          MPI_Send(&(filesData + nFile)->chunkSize, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
-          MPI_Send(&previousCh, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
-          memset((filesData + nFile)->chunk, 0, maxBytesPerChunk * sizeof(unsigned char));
-          nProcesses++;
+          /* send to the worker: */
+          MPI_Send(&workStatus, 1, MPI_INT, nWorkers, 0, MPI_COMM_WORLD); /* a flag saying if there is work to do */
+          MPI_Send(chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, nWorkers, 0, MPI_COMM_WORLD);/* the chunk buffer */
+          MPI_Send(&(filesData + nFile)->chunkSize, 1, MPI_INT, nWorkers, 0, MPI_COMM_WORLD);/* the size of the chunk */
+          MPI_Send(&previousCh, 1, MPI_INT, nWorkers, 0, MPI_COMM_WORLD);/* the character of the previous chunk */
+
+          memset(chunk, 0, maxBytesPerChunk * sizeof(unsigned char));
         }
 
-        /*
-          Receive the processing results from each worker process
-        */
-        for (nProc = 1; nProc < nProcesses + 1; nProc++)
+        for (i = 1; i < nWorkers; i++)
         {
-          /*Receive number of words and number of rows*/
-          // TODO: change this to an array of results
-          int nWords = 0;
-          int nWordsBV = 0;
-          int nWordsEC = 0;
-          MPI_Recv(&nWords, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-          MPI_Recv(&nWordsBV, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-          MPI_Recv(&nWordsEC, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          /* Receive the processing results from each worker process */
+          MPI_Recv(&nWords, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          MPI_Recv(&nWordsBV, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          MPI_Recv(&nWordsEC, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
           /* update struct with new results */
           (filesData + nFile)->nWords += nWords;
@@ -241,11 +218,12 @@ int main(int argc, char *argv[])
         }
       }
     }
-    // TODO: BROADCAST BETTER MAYBE....
+
+    /* no more work to be done */
+    workStatus = ALL_FILES_PROCESSED;
     /* inform workers that all files are process and they can exit */
-    int workStatus = ALLFILESPROCESSED;
-    for (int nProc = 1; nProc < size; nProc++)
-      MPI_Send(&workStatus, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);
+    for (i = 1; i < size; i++)
+      MPI_Send(&workStatus, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 
     /* timer ends */
     clock_gettime(CLOCK_MONOTONIC_RAW, &finish); /* end of measurement */
@@ -258,23 +236,23 @@ int main(int argc, char *argv[])
   }
   else
   {
-    int maxBytesPerChunk = DB;
+    MPI_Bcast(&maxBytesPerChunk, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     /* allocating memory for the file data structure */
-    struct fileData* data = (struct fileData *) malloc(sizeof(struct fileData));
+    struct fileData *data = (struct fileData *)malloc(sizeof(struct fileData));
     /* allocating memory for the chunk buffer */
     data->chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));
-    int workStatus;
 
     while (true)
     {
       MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      if (workStatus == ALLFILESPROCESSED)
+      if (workStatus == ALL_FILES_PROCESSED)
         break;
-      
+
       MPI_Recv(data->chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       MPI_Recv(&data->chunkSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       MPI_Recv(&data->previousCh, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      
+
       /* perform text processing on the chunk */
       processChunk(data);
       /* Send the processing results to the dispatcher */

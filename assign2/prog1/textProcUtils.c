@@ -295,17 +295,17 @@ void processChunk(struct fileData *data)
  *  Adds the bytes read to the given buffer.
  *  Updates the chunk size of the given structure.
  *  Obtains the last character of the given chunk as the previous character.
- *  Operation executed by workers.
+ *  Operation executed by the dispatcher.
  *
+ *  \param chunk buffer that will store the chars read
  *  \param data fileData structure that has the file pointer to read from and will
- *  be updated with the last character of the given chunk.
- *  \param partialData filePartialData structure that contains the chunk and chunk size.
+ *  be updated with the last character of the given chunk and the previous character.
  */
-void getChunkSizeAndLastChar(struct fileData *data)
+void getChunkSizeAndLastChar(unsigned char* chunk, struct fileData *data)
 {
   /* read the next unsigned char from the file and add it to partial data */
   int ch = fgetc(data->fp);
-  (data->chunk)[data->chunkSize++] = ch;
+  chunk[data->chunkSize++] = ch;
 
   /*
     while in middle of multi byte sequence read a unsigned char from the file
@@ -315,14 +315,14 @@ void getChunkSizeAndLastChar(struct fileData *data)
   while ((ch & 0xC0) == 0x80)
   {
     ch = fgetc(data->fp);
-    (data->chunk)[data->chunkSize++] = ch;
+    chunk[data->chunkSize++] = ch;
   }
 
   /* if its the EOF or not a multi byte sequence */
   if (ch == EOF || !(ch & 0x80))
   {
     data->previousCh = ch;
-    (data->chunk)[data->chunkSize++] = ch;
+    chunk[data->chunkSize++] = ch;
     return;
   }
 
@@ -335,12 +335,12 @@ void getChunkSizeAndLastChar(struct fileData *data)
   while (ch & (0x80 >> seq_len))
   {
     c = fgetc(data->fp);
-    (data->chunk)[data->chunkSize++] = c;
+    chunk[data->chunkSize++] = c;
     /*
       shift to add 6 zeros on the right of the final char
       and use the 6 most representative bits of the read char
     */
-    fn = (fn << 6) | ((data->chunk)[data->chunkSize++] & 0x3F);
+    fn = (fn << 6) | (chunk[data->chunkSize++] & 0x3F);
     seq_len++;
   }
   /* add the initial bits after the sequence length identifier bits */

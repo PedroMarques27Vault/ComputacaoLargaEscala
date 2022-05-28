@@ -139,12 +139,12 @@ void processChunk(struct fileData *partialData);
  *  Adds the bytes read to the given buffer.
  *  Updates the chunk size of the given structure.
  *  Obtains the last character of the given chunk as the previous character.
- *  Operation executed by workers.
+ *  Operation executed by the dispatcher.
  *
+ *  \param chunk buffer that will store the chars read
  *  \param data fileData structure that has the file pointer to read from and will
- *  be updated with the last character of the given chunk.
- *  \param partialData filePartialData structure that contains the chunk and chunk size.
+ *  be updated with the last character of the given chunk and the previous character.
  */
-void getChunkSizeAndLastChar(struct fileData* data);
+void getChunkSizeAndLastChar(unsigned char* chunk, struct fileData* data);
 
 #endif /* TEXT_PROC_Funct_H */
