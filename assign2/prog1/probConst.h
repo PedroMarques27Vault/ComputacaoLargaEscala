@@ -1,7 +1,7 @@
 /**
  *  \file probConst.h (interface file)
  *
- *  \brief Problem name: Text Processing with Multithreading.
+ *  \brief Problem name: Text Processing with Multiprocessing.
  *
  *  Problem parameters.
  *

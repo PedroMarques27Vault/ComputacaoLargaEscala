@@ -1,35 +1,49 @@
 /**
  *  \file main.c
  *
- *  \brief Problem name: Text Processing with Multithreading.
+ *  \brief Problem name: Text Processing with Multiprocessing.
  *
  *  The main objective of this program is to process files in order to obtain
  *  the number of words, and the number of words starting with a vowel and ending in
  *  a consonant.
  *
- *  It is optimized by splitting the work between worker threads which after obtaining
- *  the chunk of the file from the shared region, perform the calculations and then save
- *  the processing results.
+ *  It is optimized by having one dispatcher process splitting the files with text in chunks,
+ *  and sending them to the other worker processes to perform the text processing operations.
  *
- *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
- *  monitor of the Lampson / Redell type.
+ *  Design and flow of the dispatcher process:
+ * 
+ *  1 - Read and process the command line.
+ *  2 - Broadcast a message with the maximum number of bytes each chunk will have.
+ *  3 - For every file:
+ *    3.1 - Obtain chunks and split them to each worker process until there are no
+ *    more chunks or no more workers available.
+ *    3.2 - Wait for a response with the processing results from each worker that it sent a chunk.
+ *    3.3 - Store the processing results obtained from the workers response.
+ *  4 - Send a message to the workers alerting there isn't more work to be done.
+ *  5 - Print final processing results.
+ *  6 - Finalize.
+ * 
+ *  Design and flow of the worker process:
+ *  
+ *  1 - Receive a broadcasted message from the dispatcher with the maximum number of bytes of each chunk.
+ *  2 - Until the dispatcher says there is work to be done:
+ *    2.1 - Wait for data to process.
+ *    2.2 - Process the data.
+ *    2.2 - Send to the dispatcher the processing results.
+ *  3 - Finalize.
  *
- *  \author Mário Silva - April 2022
+ *  \author Mário Silva - May 2022
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <math.h>
 #include <time.h>
 #include <stdbool.h>
 #include <string.h>
 #include <libgen.h>
 #include <mpi.h>
 
-#include <pthread.h>
-
-#include "sharedRegion.h"
 #include "textProcUtils.h"
 #include "probConst.h"
 
@@ -50,19 +64,29 @@ static void printUsage(char *cmdName);
 void printResults(struct fileData *filesData, int numFiles);
 
 /**
- *  \brief Main thread.
+ *  \brief
  *
- *  Design and flow of the main thread:
- *
- *  1 - Process the arguments from the command line.
- *
- *  2 - Initialize the shared region with the necessary structures (by passing the filenames).
- *
- *  3 - Create the worker threads.
- *
- *  4 - Wait for the worker threads to terminate.
- *
- *  5 - Print final results.
+ *  Design and flow of the dispatcher process:
+ * 
+ *  1 - Read and process the command line.
+ *  2 - Broadcast a message with the maximum number of bytes each chunk will have.
+ *  3 - For every file:
+ *    3.1 - Obtain chunks and split them to each worker process until there are no
+ *    more chunks or no more workers available.
+ *    3.2 - Wait for a response with the processing results from each worker that it sent a chunk.
+ *    3.3 - Store the processing results obtained from the workers response.
+ *  4 - Send a message to the workers alerting there isn't more work to be done.
+ *  5 - Print final processing results.
+ *  6 - Finalize.
+ * 
+ *  Design and flow of the worker process:
+ *  
+ *  1 - Receive a broadcasted message from the dispatcher with the maximum number of bytes of each chunk.
+ *  2 - Until the dispatcher says there is work to be done:
+ *    2.1 - Wait for data to process.
+ *    2.2 - Process the data.
+ *    2.2 - Send to the dispatcher the processing results.
+ *  3 - Finalize.
  *
  *  \param argc number of words of the command line
  *  \param argv list of words of the command line
@@ -162,8 +186,13 @@ int main(int argc, char *argv[])
 
     for (nFile = 0; nFile < numFiles; nFile++)
     {
+      /* initialize struct data */
       (filesData + nFile)->fileName = fileNames[nFile];
       (filesData + nFile)->finished = false;
+      (filesData + nFile)->nWords = 0;
+      (filesData + nFile)->nWordsBV = 0;
+      (filesData + nFile)->nWordsEC = 0;
+      (filesData + nFile)->previousCh = 32;
       /* get the file pointer */
       if (((filesData + nFile)->fp = fopen(fileNames[nFile], "rb")) == NULL)
       {
@@ -240,6 +269,9 @@ int main(int argc, char *argv[])
 
     /* allocating memory for the file data structure */
     struct fileData *data = (struct fileData *)malloc(sizeof(struct fileData));
+    data->nWords = 0;
+    data->nWordsBV = 0;
+    data->nWordsEC = 0;
     /* allocating memory for the chunk buffer */
     data->chunk = (unsigned char *)malloc(maxBytesPerChunk * sizeof(unsigned char));
 
@@ -279,11 +311,10 @@ int main(int argc, char *argv[])
  */
 static void printUsage(char *cmdName)
 {
-  fprintf(stderr, "\nSynopsis: %s OPTIONS [filename / number of threads / maximum number of bytes per chunk]\n"
+  fprintf(stderr, "\nSynopsis: %s OPTIONS [filename / maximum number of bytes per chunk]\n"
                   "  OPTIONS:\n"
                   "  -h      --- print this help\n"
                   "  -f      --- filename to process\n"
-                  "  -n      --- number of threads\n"
                   "  -m      --- maximum number of bytes per chunk\n",
           cmdName);
 }

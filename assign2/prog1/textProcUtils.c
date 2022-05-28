@@ -1,7 +1,7 @@
 /**
  *  \file textProcUtils.h (interface file)
  *
- *  \brief Problem name: Text Processing with Multithreading.
+ *  \brief Problem name: Text Processing with Multiprocessing.
  *
  *  Functions used for text processing.
  *
@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "sharedRegion.h"
+#include "textProcUtils.h"
 
 /**
  *  \brief Checks if the given character is a alpha character.
