@@ -41,8 +41,29 @@ static void printUsage(char *cmdName);
 # define PROCESSINGFILES 1
 
 /**
- *  \brief Main thread.
+ *  \brief
  *
+ *  Design and flow of the Dispatcher process:
+ * 
+ *  1 - Read and process the command line.
+ *  2 - Broadcast a message with the maximum number of bytes each chunk will have.
+ *  3 - For every file:
+ *    3.1 - Obtain chunks and split them to each worker process until there are no
+ *    more chunks or no more workers available.
+ *    3.2 - Wait for a response with the processing results from each worker that it sent a chunk.
+ *    3.3 - Store the processing results obtained from the workers response.
+ *  4 - Send a message to the workers alerting there isn't more work to be done.
+ *  5 - Print final processing results.
+ *  6 - Finalize.
+ * 
+ *  Design and flow of the worker processes:
+ *  
+ *  1 - Receive a broadcasted message from the dispatcher with the maximum number of bytes of each chunk.
+ *  2 - Until the dispatcher says there is work to be done:
+ *    2.1 - Wait for data to process.
+ *    2.2 - Process the data.
+ *    2.2 - Send to the dispatcher the processing results.
+ *  3 - Finalize.
  *
  *  \param argc number of words of the command line
  *  \param argv list of words of the command line
@@ -52,11 +73,7 @@ static void printUsage(char *cmdName);
 
 int main(int argc, char *argv[])
 {
-  int t  = 20;
-  double time = 0;
-  double results_array[t];
-
-
+  
   char *filenames[16];                                                                                          /* array of file's names  */
   int fnip = 0;                                                                                                 /* filename insertion pointer */
   int opt;  
@@ -69,8 +86,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  for (int fmp = 0; fmp<t;fmp++){
-  
+ 
   if (size < 2)                                                                                                 /* Requires at least 2 processes */
   {
     fprintf(stderr, "Requires at least two processes.\n");
@@ -138,11 +154,18 @@ int main(int argc, char *argv[])
       }
       
       int numMatrix;
-      fread(&numMatrix, 4, 1, fp);                                                                              /* get number of matrices in the file */
-      
+      int c;
+      c = fread(&numMatrix, 4, 1, fp);                                                                              /* get number of matrices in the file */
+      if (!c) {
+        printf("Error: could not read file %s", filenames[fCk]);
+        return 1;
+        }
       int order; 
-      fread(&order, 4, 1, fp);                                                                                  /* get order of the matrices in the file */
-      
+      c = fread(&order, 4, 1, fp);                                                                                  /* get order of the matrices in the file */
+      if (!c) {
+        printf("Error: could not read file %s", filenames[fCk]);
+        return 1;
+        }
        
  
       (files+fCk)->filename = filenames[fCk];                                                                   /* save current file's data */
@@ -162,8 +185,11 @@ int main(int argc, char *argv[])
 
         for (int nProc = 1; nProc<toRead; nProc++){
           double *matrix = (double *)malloc(order * order * sizeof(double));                                    /* memory allocation of the matrix */
-          fread(matrix, 8, order*order, fp);                                                                    /* read full matrix from file */
-          
+          c = fread(matrix, 8, order*order, fp);                                                                    /* read full matrix from file */
+          if (!c) {
+            printf("Error: could not read file %s", filenames[fCk]);
+            return 1;
+            }
           int WORKSTATUS = PROCESSINGFILES;
           MPI_Send(&WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);                                          /* Send current worker status (PROCESSINGFILES) */
           MPI_Send(&order, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);                                               /* Send order*/
@@ -207,10 +233,7 @@ int main(int argc, char *argv[])
       }
         
     }
-    double _time =  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    time+=_time;
-    results_array[fmp] = _time;
-    printf ("\nElapsed time = %.6f s\n",  _time);
+    printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
   
    }else{                                                                                 /* Worker Processes, rank!=0 */
@@ -237,14 +260,9 @@ int main(int argc, char *argv[])
     }
 
   }
-  }
+  
 
-  printf("%f\n", time/t);
-  double _sum = 0;
-  for (int k = 0; k<t;k++){
-    _sum+=  ( results_array[k]-(time/t))*( results_array[k]-(time/t));
-  }
-  printf("Standard Deviation %f\n", sqrt(_sum/t));
+
   MPI_Finalize();
   exit(EXIT_SUCCESS);
 
