@@ -46,23 +46,26 @@ static void printUsage(char *cmdName);
  *  Design and flow of the Dispatcher process:
  * 
  *  1 - Read and process the command line.
- *  2 - Broadcast a message with the maximum number of bytes each chunk will have.
- *  3 - For every file:
- *    3.1 - Obtain chunks and split them to each worker process until there are no
- *    more chunks or no more workers available.
- *    3.2 - Wait for a response with the processing results from each worker that it sent a chunk.
- *    3.3 - Store the processing results obtained from the workers response.
- *  4 - Send a message to the workers alerting there isn't more work to be done.
- *  5 - Print final processing results.
- *  6 - Finalize.
+ *  2 - For every file:
+ *    2.1 - Read the number of matrices in file
+ *    2.2 - Read the order of the matrices in file
+ *    2.3 - Initialize the file's fileStructure containg the array of determinants
+ *    2.4 - For every matrix:
+ *        2.4.1 - Send worker status, matrix order, matrix index in file and the matrix itself
+ *        2.4.2 - Wait for a response  from each worker, including the index of the processed matrix and the determinant.
+ *        2.4.3 - Store the results in the corresponding position in the current fileStructure's determinant array.
+ *  3 - Send a message to the workers alerting there isn't more work to be done and to finalize.
+ *  4 - Print final results.
+ *  5 - Finalize.
  * 
  *  Design and flow of the worker processes:
  *  
- *  1 - Receive a broadcasted message from the dispatcher with the maximum number of bytes of each chunk.
+ *  1 - Receive a message with the current worker status.
+ *    1.1 - If no more work to be done, finalize
  *  2 - Until the dispatcher says there is work to be done:
- *    2.1 - Wait for data to process.
- *    2.2 - Process the data.
- *    2.2 - Send to the dispatcher the processing results.
+ *    2.1 - Receive matrix order, matrix index, and the matrix itself.
+ *    2.2 - Calculate the determinant.
+ *    2.2 - Send the matrix index and the determinant to the dispatcher.
  *  3 - Finalize.
  *
  *  \param argc number of words of the command line
