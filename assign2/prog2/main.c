@@ -1,22 +1,16 @@
 /**
  *  \file main.c 
  *
- *  \brief  Problem name: Matrix Determinant Calculation With Multithreading.
+ *  \brief  Problem name: Matrix Determinant Calculation With MPI.
  * 
- *  The objective is to matrices within files and calculate their determinant.
+ *  The objective is to get the matrices within files and calculate their determinant.
  *
- *  The main thread is responsible for reading the matrices from files and providing them to
- *  the shared region. Aferwards, worker threads should retrieve them and calculate the determinant.
- *  Then, these results are saved in the shared region where the main thread can retrieve them and 
- *  present them. 
+ *  The dispatcher is responsible for reading the matrices from files and sending them to
+ *  the worker processes. Aferwards, these workers should retrieve them and calculate the determinant.
+ *  Then, these results are sent back to the dispatcher in order to display them
  *
- *  Synchronization based on monitors.
- *  Both threads and the monitor are implemented using the pthread library which enables the creation of a
- *  monitor of the Lampson / Redell type.
  *
- *  Generator thread of the intervening entities.
- *
- *  \author Pedro Marques - April 2022
+ *  \author Pedro Marques - May 2022
  */
 
 
@@ -49,19 +43,6 @@ static void printUsage(char *cmdName);
 /**
  *  \brief Main thread.
  *
- *  Design and flow of the main thread:
- *
- *  1 - Process the arguments from the command line.
- *
- *  2 - Initialize the shared region with the necessary structures.
- *
- *  3 - Create the worker threads.
- * 
- *  4 - Continuously provide matrices to the shared region, for the worker to process
- *
- *  5 - Wait for the worker threads to terminate.
- *
- *  6 - Print final results.
  *
  *  \param argc number of words of the command line
  *  \param argv list of words of the command line
@@ -73,11 +54,11 @@ int main(int argc, char *argv[])
 {
 
  
-  char *filenames[10];                                                                     /* array of file's names  */
-  int fnip = 0;                                                                        /* filename insertion pointer */
+  char *filenames[16];                                                                                          /* array of file's names  */
+  int fnip = 0;                                                                                                 /* filename insertion pointer */
   int opt;  
   
-                                                                                        /* selected option */
+                                                                                        
   int rank, size;
 
   // MPI
@@ -85,29 +66,29 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  /* This program requires at least 2 processes */
-  if (size < 2)
+  
+  if (size < 2)                                                                                                 /* Requires at least 2 processes */
   {
     fprintf(stderr, "Requires at least two processes.\n");
     MPI_Finalize();
     return EXIT_FAILURE;
   }
-  if (rank == 0){
+  if (rank == 0){                       
     // argument handling
     do  
     {
       switch ((opt = getopt(argc, argv, "f:")))
       {
-      case 'f': /* file name */
+      case 'f':                                                                                                 /* file name */
         if (optarg[0] == '-')
         {
           fprintf(stderr, "%s: file name is missing\n", basename(argv[0]));
           printUsage(basename(argv[0]));
           return EXIT_FAILURE;
         }
-        if (fnip>=10) /* at most 10 files */                                    
+        if (fnip>=16)                                                                                           /* at most 16 files */                                    
         {
-          fprintf(stderr, "%s: Too many files to unpack. At Most 10\n", basename(argv[0]));
+          fprintf(stderr, "%s: Too many files to unpack. At Most 16\n", basename(argv[0]));
           printUsage(basename(argv[0]));
           return EXIT_FAILURE;
         }
@@ -133,13 +114,16 @@ int main(int argc, char *argv[])
       printUsage(basename(argv[0]));
       return EXIT_FAILURE;
     }   
-      struct timespec start, finish;                                                                      /* time limits */
+   
 
-    clock_gettime (CLOCK_MONOTONIC_RAW, &start);                                          /* begin of time measurement */  
-    struct matrixFile * files = (struct matrixFile *)malloc(fnip * sizeof(struct matrixFile));       /* initialize files array  */
+   
+      struct timespec start, finish;                                                                            /* time limits */
+
+    clock_gettime (CLOCK_MONOTONIC_RAW, &start);                                                                /* begin of time measurement */  
+    struct matrixFile * files = (struct matrixFile *)malloc(fnip * sizeof(struct matrixFile));                  /* initialize files array  */
                                               
 
-    for (int fCk = 0;fCk<fnip;fCk++){                                          /* process each file in filenames array */
+    for (int fCk = 0;fCk<fnip;fCk++){                                                                           /* process each file in filenames array */
 
       FILE *fp = fopen(filenames[fCk], "r");
 
@@ -148,67 +132,67 @@ int main(int argc, char *argv[])
           printf("Error: could not open file %s", filenames[fCk]);
           return 1;
       }
-
+      int c;
       int numMatrix;
-      fread(&numMatrix, 4, 1, fp);                                               /* get number of matrices in the file */
+      c = fread(&numMatrix, 4, 1, fp);                                                                          /* get number of matrices in the file */
       
-      int order;
-      fread(&order, 4, 1, fp);                                                /* get order of the matrices in the file */
+      int order; 
+      c = fread(&order, 4, 1, fp);                                                                              /* get order of the matrices in the file */
       
        
-
-      (files+fCk)->filename = filenames[fCk];
-      (files+fCk)->order = order;
-      (files+fCk)->nMatrix = numMatrix;
-      (files+fCk)->matrixDeterminants = (double *)malloc(numMatrix * sizeof(double));
+ 
+      (files+fCk)->filename = filenames[fCk];                                                                   /* save current file's data */
+      (files+fCk)->order = order;                                                                               /* save order of the matrices */
+      (files+fCk)->nMatrix = numMatrix;                                                                         /* save total number of matrices */
+      (files+fCk)->matrixDeterminants = (double *)malloc(numMatrix * sizeof(double));                           /* allocate memory for determinants */
 
       
       int rest = numMatrix%(size-1);
-      int iterations = floor((numMatrix-rest)/(size-1));
+      int iterations = floor((numMatrix-rest)/(size-1));                                                        /* deal with odd number of workers */
       int incMCount = 0;  
       if (rest>0) iterations+=1;
 
-      for (int iter=0; iter<iterations;iter++){
+      for (int iter=0; iter<iterations;iter++){                                                                 /* read and get determinant of each matrix in file */
         int toRead = size;
-        if (iter == iterations-1 && rest != 0) toRead = rest+1;
+        if (iter == iterations-1 && rest != 0) toRead = rest+1;                                                 /* deal with odd number of workers */
 
         for (int nProc = 1; nProc<toRead; nProc++){
-          double *matrix = (double *)malloc(order * order * sizeof(double));        /* memory allocation of the matrix */
-          fread(matrix, 8, order*order, fp);                                     /* read full matrix from file */
+          double *matrix = (double *)malloc(order * order * sizeof(double));                                    /* memory allocation of the matrix */
+          int k = fread(matrix, 8, order*order, fp);                                                            /* read full matrix from file */
           
           int WORKSTATUS = PROCESSINGFILES;
-          MPI_Send(&WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
-          MPI_Send(&order, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);        /* Send order*/
-          MPI_Send(&incMCount, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);/* Send matrix index*/
-          MPI_Send(matrix, order*order, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD);
+          MPI_Send(&WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);                                          /* Send current worker status (PROCESSINGFILES) */
+          MPI_Send(&order, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);                                               /* Send order*/
+          MPI_Send(&incMCount, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);                                           /* Send matrix index*/
+          MPI_Send(matrix, order*order, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD);                                  /* send matrix */
           incMCount++;
          
       }
 
-      for (int nProc = 1; nProc<toRead; nProc++){
+      for (int nProc = 1; nProc<toRead; nProc++){                                                               /* receive results form all workers */
           int curMatrixNumber;
           double determinant;
-          MPI_Recv(&curMatrixNumber, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-          MPI_Recv(&determinant, 1, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          MPI_Recv(&curMatrixNumber, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                  /* receive the matrix index from the nProc worker */
+          MPI_Recv(&determinant, 1, MPI_DOUBLE, nProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                   /* receive the determinant from the nProc worker*/
 
           /* update struct with new results */
-          (*((((struct matrixFile *)(files+fCk))->matrixDeterminants) + curMatrixNumber)) = determinant;        /* add determinant in the file's determinants array */
+          (*((((struct matrixFile *)(files+fCk))->matrixDeterminants) + curMatrixNumber)) = determinant;        /* save calculated determinant */
 
           }
       }
     }
 
 
-    for (int nProc = 1; nProc<size; nProc++){
+    for (int nProc = 1; nProc<size; nProc++){                                        /* End worker Processes */
       int ws = ALLFILESPROCESSED;
-          MPI_Send(&ws, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
+      MPI_Send(&ws, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD); 
     }
 
   
 
     clock_gettime (CLOCK_MONOTONIC_RAW, &finish);   
     for (int g=0; g<fnip; g++) {                                                     /* printing results for each file */
-      struct matrixFile *file = ((struct matrixFile *)(files+g));                                     /* retrieve file from shared region */
+      struct matrixFile *file = ((struct matrixFile *)(files+g));                    
       
       printf("\nMatrix File  %s\n", file->filename);
       printf("Number of Matrices  %d\n", file->nMatrix);
@@ -222,36 +206,31 @@ int main(int argc, char *argv[])
     printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
   
-  }else{
+   }else{                                                                                 /* Worker Processes, rank!=0 */
     
     while(true){
       int curWorkStatus;
-      MPI_Recv(&curWorkStatus, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      if (curWorkStatus == ALLFILESPROCESSED) {
-        printf("BROKEN");
+      MPI_Recv(&curWorkStatus, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);      /* receive current worker status  */
+      if (curWorkStatus == ALLFILESPROCESSED) {                                           /* finalize if ALLFILESPROCESSED  */
         break;
       }
       
 
       int order, matrixIndex;
-      MPI_Recv(&order, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      double *matrix = (double *)malloc(order * order * sizeof(double)); 
-      MPI_Recv(&matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      MPI_Recv(matrix, order*order, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&order, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);              /* receive matrix order */
+      double *matrix = (double *)malloc(order * order * sizeof(double));                  /* matrix memory allocation */
+      MPI_Recv(&matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);        /* receive matrix index */
+      MPI_Recv(matrix, order*order, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); /* receive matrix */
     
 
-      double det = getDeterminant(order,matrix);                     /* calculate determinant  */
-      free(matrix);
-      MPI_Send(&matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-      MPI_Send(&det, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-
-      
-                                                                     /* free allocated memory */
+      double det = getDeterminant(order,matrix);                                          /* calculate determinant  */
+      free(matrix);                                                                       /* free memory used by malloc  */
+      MPI_Send(&matrixIndex, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);                           /* send matrix index back to dispatcher  */
+      MPI_Send(&det, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);                                /* send matrix determinant to dispatcher  */
     }
 
   }
 
-  
   MPI_Finalize();
   exit(EXIT_SUCCESS);
 
