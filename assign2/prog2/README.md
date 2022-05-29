@@ -30,3 +30,5 @@ Example:
 	
 	
 mpicc -Wall -O3 -o prog2 main.c matrixutils.c -lm
+mpiexec -n 4 ./prog2 -f mat128
+

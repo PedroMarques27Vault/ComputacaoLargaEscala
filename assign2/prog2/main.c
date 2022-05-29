@@ -52,8 +52,11 @@ static void printUsage(char *cmdName);
 
 int main(int argc, char *argv[])
 {
+  int t  = 20;
+  double time = 0;
+  double results_array[t];
 
- 
+
   char *filenames[16];                                                                                          /* array of file's names  */
   int fnip = 0;                                                                                                 /* filename insertion pointer */
   int opt;  
@@ -66,6 +69,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+  for (int fmp = 0; fmp<t;fmp++){
   
   if (size < 2)                                                                                                 /* Requires at least 2 processes */
   {
@@ -132,12 +136,12 @@ int main(int argc, char *argv[])
           printf("Error: could not open file %s", filenames[fCk]);
           return 1;
       }
-      int c;
+      
       int numMatrix;
-      c = fread(&numMatrix, 4, 1, fp);                                                                          /* get number of matrices in the file */
+      fread(&numMatrix, 4, 1, fp);                                                                              /* get number of matrices in the file */
       
       int order; 
-      c = fread(&order, 4, 1, fp);                                                                              /* get order of the matrices in the file */
+      fread(&order, 4, 1, fp);                                                                                  /* get order of the matrices in the file */
       
        
  
@@ -158,7 +162,7 @@ int main(int argc, char *argv[])
 
         for (int nProc = 1; nProc<toRead; nProc++){
           double *matrix = (double *)malloc(order * order * sizeof(double));                                    /* memory allocation of the matrix */
-          int k = fread(matrix, 8, order*order, fp);                                                            /* read full matrix from file */
+          fread(matrix, 8, order*order, fp);                                                                    /* read full matrix from file */
           
           int WORKSTATUS = PROCESSINGFILES;
           MPI_Send(&WORKSTATUS, 1, MPI_INT, nProc, 0, MPI_COMM_WORLD);                                          /* Send current worker status (PROCESSINGFILES) */
@@ -203,7 +207,10 @@ int main(int argc, char *argv[])
       }
         
     }
-    printf ("\nElapsed time = %.6f s\n",  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
+    double _time =  (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    time+=_time;
+    results_array[fmp] = _time;
+    printf ("\nElapsed time = %.6f s\n",  _time);
 
   
    }else{                                                                                 /* Worker Processes, rank!=0 */
@@ -230,7 +237,14 @@ int main(int argc, char *argv[])
     }
 
   }
+  }
 
+  printf("%f\n", time/t);
+  double _sum = 0;
+  for (int k = 0; k<t;k++){
+    _sum+=  ( results_array[k]-(time/t))*( results_array[k]-(time/t));
+  }
+  printf("Standard Deviation %f\n", sqrt(_sum/t));
   MPI_Finalize();
   exit(EXIT_SUCCESS);
 
@@ -246,12 +260,10 @@ int main(int argc, char *argv[])
  */
 static void printUsage(char *cmdName)
 {
-  fprintf(stderr, "\nSynopsis: %s OPTIONS [filename / number of threads / size of the FIFO queue]\n"
+  fprintf(stderr, "\nSynopsis: %s OPTIONS [filename]\n"
                   "  OPTIONS:\n"
                   "  -h      --- print this help\n"
-                  "  -f      --- filename to process\n"
-                  "  -n      --- number of threads\n"
-                  "  -k      --- size of the FIFO queue in the monitor\n",
+                  "  -f      --- filename to process\n",
           cmdName);
 }
 
