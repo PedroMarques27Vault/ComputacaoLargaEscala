@@ -12,9 +12,8 @@
 /** \brief get the determinant of given matrix */
 extern double getDeterminant(int order, double *matrix);             
 
-/** \brief For a given row, calculates the pivot and continuously updates the determinant's value */
-extern __global__ void calcPivots(double *matricesDevice, int *orderDevice, double *determinants, int *currentRow);
 
-/** \brief For a given row, subtracts the pivot calculated with calcPivots, executing Gauss Elimination */
-extern __global__ void subtractPivots(double *matricesDevice, int *orderDevice, double *determinants, int *currentRow);
+/** \brief Calculates the determinant for each matrix  and returns them in an array */
+extern __global__ void calcDeterminants(double *matricesDevice, int *orderDevice, double *determinants);
+
 #endif
