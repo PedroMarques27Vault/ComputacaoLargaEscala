@@ -1,9 +1,9 @@
 /**
- *  \file matrix_utils.c
+ *  \file matrix_utils_row.c
  *
- *  \brief Problem name: Matrix Determinant Calculation With CUDA.
-
- *  Utility functions to calculate the determinant of a matrix
+ *  \brief Problem name: Matrix Determinant Calculation With CUDA using row reduction.
+ *
+ *  Utility functions to calculate the determinant of a matrix.
  *
  *  \author Mário Silva, Pedro Marques - June 2022
  */
@@ -16,10 +16,10 @@
 
 /**
  *  \brief
- *  Calculates the determinant of a given matrix
+ *  Calculates the determinant of a given matrix using row reduction.
+ * 
  *  \param matrix the matrix to be processed
  *  \param argv order of the matrix
- *
  *  \return the determinant of the matrix
  */
 double getDeterminant(int order, double *matrix)
@@ -49,7 +49,7 @@ double getDeterminant(int order, double *matrix)
     for (k = i + 1; k < order; k++)
     {
       double term = *((matrix + k * order) + i) / *((matrix + i * order) + i);
-      for (j = 0; j < order; j++)
+      for (j = i + 1; j < order; j++)
       {
         *((matrix + k * order) + j) = *((matrix + k * order) + j) - term * (*((matrix + i * order) + j));
       }
@@ -62,28 +62,31 @@ double getDeterminant(int order, double *matrix)
     det *= (*((matrix + i * order) + i));
   }
   return pow(-1, swaps) * det;
-  ;
 }
 
 /**
  *  \brief
  *  Calculates the determinant of each matrix in a provided array of matrix  and returns them in an array. 
- *  Each thread calculates the pivot for each row. The threads synchronize and then Gaussian Elimination
- *  begins by subtracted the pivot to each row
+ *
+ *  1. The thread corresponding to the current iteration calculates the pivot,
+ *  and, multiplies the pivot to the determinant of that matrix.
+ *  2. Threads Synchronize.
+ *  3. Each thread, that is responsible for a row below of the current pivot’s row,
+ *  does the Gaussian Elimination on its row only.
+ *  4. Threads Synchronize.
+ *
  *  \param matricesDevice array of matrices
- *  \param orderDevice order of the matrices
  *  \param determinants array of determinants for each matrix
  */
-__global__ void calcDeterminants(double *matricesDevice, int *orderDevice, double *determinants)
+__global__ void calcDeterminantsRows(double *matricesDevice, double *determinants)
 {
-  int order = *orderDevice;
+  int order = blockDim.x;
   double *matrix = matricesDevice + blockIdx.x * order * order;
   double pivot;
   bool switchedRows;
   double *row = matrix + threadIdx.x * order;
   double *pivotRow;
   double scale;
-
   int iteration, k, j, temp;
   for (iteration = 0; iteration < order; iteration++)
   {
@@ -124,8 +127,10 @@ __global__ void calcDeterminants(double *matricesDevice, int *orderDevice, doubl
         determinants[blockIdx.x] *= -1;
     }
 
+    // synchronize threads
     __syncthreads();
 
+    // if the thread's row is bellow the current pivot's row
     if (threadIdx.x > iteration)
     {
       pivotRow = matrix + iteration * order;
@@ -139,6 +144,9 @@ __global__ void calcDeterminants(double *matricesDevice, int *orderDevice, doubl
       }
     }
 
+    // synchronize threads
     __syncthreads();
+    if (threadIdx.x < iteration)
+      return;
   }
 }

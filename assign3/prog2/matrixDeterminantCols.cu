@@ -1,3 +1,14 @@
+/**
+ *  \file matrixDeterminantCols.c
+ *
+ *  \brief Problem name: Matrix Determinant Calculation With CUDA using column reduction.
+ *
+ *  The objective is to get the matrices within files and calculate their determinants,
+ *  by utilizing the CUDA capabilities.
+ *
+ *  \author Mário Silva, Pedro Marques - June 2022
+ */
+
 #include "../common/common.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
@@ -24,19 +35,17 @@ static void printUsage(char *cmdName);
  *
  *  Design and flow
  *
- *  1 - Read and process the command line.
- *  2 - For every file:
- *    2.1 - Read the number of matrices in file
- *    2.2 - Read the order of the matrices in file
- *    2.3 - Initialize the file's array of matrices and determinants
- *    2.4 - Load all the matrices into the array
- *    2.5 - Copy the matrices from the host to the kernel's memory
- *    2.6 - Process and Calculate the Matrix' Determinant:
- *    2.7 - Retrieve results from kernel back to host
- *    2.8 - Print results
- *    2.9 - For each matrix, calculate determinant using the CPU
- *  3 - Print total elapsed time for both CPU and Kernel operations
- *  4 - Finalize.
+ *  1. Read and process the command line.
+ *  2. Read the number of matrices in the file.
+ *  3. Read the order of the matrices in the file.
+ *  4. Initialize the array of matrices and determinants.
+ *  5. Load all the matrices.
+ *  6. Copy the matrices from the host to the GPU global memory.
+ *  7. Process and calculate the matrices determinants.
+ *  8. Retrieve the array of determinants from the GPU back to the host.
+ *  9. Print results.
+ *  10. For each matrix, calculate determinant using the CPU.
+ *  11. Print total elapsed time for both CPU and GPU operations.
  *
  *  \param argc number of words of the command line
  *  \param argv list of words of the command line
@@ -126,13 +135,9 @@ int main(int argc, char **argv)
     double *matricesHost = (double *)malloc(sizeof(double) * numMatrices * order * order); /* allocate host memory for the matrices */
     double *determinantsHost = (double *)malloc(sizeof(double) * numMatrices);             /* allocate host memory for the determinants */
 
-    // malloc device global memory the order and all the matrices
-    int *orderDevice;
-    int *currentCol;
+    // malloc device global memory all the matrices and the results array
     double *determinants;
     double *matricesDevice;
-    CHECK(cudaMalloc((void **)&orderDevice, sizeof(int)));                                     /* Device memory allocation for matrix order */
-    CHECK(cudaMalloc((void **)&currentCol, sizeof(int)));                                      /* Device memory allocation of current column being processed */
     CHECK(cudaMalloc((void **)&determinants, sizeof(double) * numMatrices));                   /* Device memory allocation for determinants array */
     CHECK(cudaMalloc((void **)&matricesDevice, sizeof(double) * numMatrices * order * order)); /* Device memory allocation for matrices */
 
@@ -143,7 +148,6 @@ int main(int argc, char **argv)
     }
 
     // transfer data from host to device
-    CHECK(cudaMemcpy(orderDevice, &order, sizeof(int), cudaMemcpyHostToDevice));                                           /* Set matrix order at device's memory */
     CHECK(cudaMemcpy(matricesDevice, matricesHost, sizeof(double) * numMatrices * order * order, cudaMemcpyHostToDevice)); /* Set number of matrices at device's memory */
 
     // invoke kernel at host side
@@ -151,8 +155,9 @@ int main(int argc, char **argv)
     dim3 block(order, 1);      /* Create a thread per column for each block */
 
     double iStart = seconds();
-   
-    calcDeterminants<<<grid, block>>>(matricesDevice, orderDevice, determinants); /* Calculate pivots for each column */
+
+    calcDeterminantsCols<<<grid, block>>>(matricesDevice, determinants); /* Calculate pivots for each column */
+    CHECK(cudaDeviceSynchronize());
 
     iElaps += seconds() - iStart; /* sum processing time with CUDA Kernel */
 
@@ -163,8 +168,7 @@ int main(int argc, char **argv)
     // check device results
     printResults(filenames[fileIndex], numMatrices, order, determinantsHost); /* print determinant calculation results */
 
-    CHECK(cudaFree(orderDevice)); /* free device global memory */
-    CHECK(cudaFree(currentCol));
+    /* free device global memory */
     CHECK(cudaFree(determinants));
     CHECK(cudaFree(matricesDevice));
 
